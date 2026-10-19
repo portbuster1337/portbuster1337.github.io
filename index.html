@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portbuster Security Research</title>
+  <meta name="description" content="Independent security research on Windows internals, network capture, and detection engineering.">
+  <link rel="canonical" href="https://portbuster1337.github.io/">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark" aria-hidden="true">PB</span>
+        <span class="brand-text"><strong>Portbuster</strong><span>Security Research</span></span>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <a href="/" aria-current="page">Writing</a>
+        <a href="/about.html">About</a>
+        <a href="https://github.com/portbuster1337" rel="me">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="wrap home-intro">
+      <p class="kicker">Independent security research</p>
+      <h1>Notes on Windows internals, network capture, and detection.</h1>
+      <p class="lede">I reverse engineer how software moves data across trust boundaries, then write down the parts that help defenders.</p>
+    </section>
+
+    <section class="wrap" aria-labelledby="writing">
+      <div class="section-head">
+        <h2 id="writing">Writing</h2>
+        <span>2026</span>
+      </div>
+      <div class="post-list">
+        <article class="post-item">
+          <div class="post-date">
+            <time datetime="2026-10-20">20 Oct 2026</time>
+            <span class="tag">Windows</span>
+            <span class="tag">Network</span>
+          </div>
+          <div>
+            <h2><a href="/posts/headless-https-capture.html">Headless HTTPS capture on Windows: inside HTTP Debugger's IPC</a></h2>
+            <p>A signed capture service, a 128-slot shared-memory ring, and a machine-wide root CA. How the service exposes plaintext without its GUI, where the trust boundary actually sits, and how defenders can detect the same pattern.</p>
+            <p class="read">26 min read</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="wrap tooling" aria-labelledby="tooling">
+      <h2 id="tooling">Tooling</h2>
+      <p><a href="https://github.com/portbuster1337/NetSnitch">NetSnitch</a> is a headless HTTP and HTTPS capture tool for Windows, with a Python collector and a paged web interface. The repository contains the implementation, the collector, and the build notes. It is intended for authorized diagnostics and research on systems you control.</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <p>(c) 2026 Portbuster. Original research unless noted.<br>No analytics, trackers, external fonts, or third-party assets.</p>
+      <div class="footer-links">
+        <a href="/about.html">About</a>
+        <a href="https://github.com/portbuster1337">GitHub</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

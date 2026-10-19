@@ -5,12 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Headless HTTPS capture on Windows: inside HTTP Debugger's IPC | Portbuster</title>
   <meta name="description" content="A reverse engineering note on HTTP Debugger's named-section IPC, its 128-slot transaction ring, the root CA it installs, and how defenders can detect the same pattern.">
-  <meta name="author" content="Portbuster">
+  <meta name="author" content="Portbuster, independent researcher">
   <link rel="canonical" href="https://portbuster1337.github.io/posts/headless-https-capture.html">
   <meta property="og:type" content="article">
   <meta property="og:title" content="Headless HTTPS capture on Windows: inside HTTP Debugger's IPC">
   <meta property="og:description" content="A signed capture service, a shared-memory ring, and a root CA. How the service exposes plaintext without its GUI, and how defenders can detect the same pattern.">
   <meta property="og:url" content="https://portbuster1337.github.io/posts/headless-https-capture.html">
+  <meta property="og:image" content="https://portbuster1337.github.io/assets/collector-overview.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1440">
+  <meta property="og:image:height" content="1050">
+  <meta property="og:image:alt" content="NetSnitch collector interface with four filter-aware pie charts and a paged transaction list.">
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/style.css">
 </head>
@@ -39,6 +44,7 @@
         <div class="post-meta">
           <time datetime="2026-10-20">20 October 2026</time>
           <span>Portbuster</span>
+          <span>Independent researcher</span>
           <span>26 min read</span>
         </div>
       </header>
@@ -431,6 +437,16 @@
         <p>The agent uploads finished transactions as JSON. When the queue is busy, it coalesces up to 128 batches or 8 MB into one <code>application/x-ndjson</code> POST. The collector parses each line, inserts the whole set in one SQLite transaction, and trims each affected agent to its newest 20,000 rows. WAL mode and <code>synchronous=NORMAL</code> keep the write path cheap; the database is a capture cache, not a ledger.</p>
         <p>The web UI is deliberately metadata-first. The list query returns only the columns needed for the row: time, method, URL, host, status, process, user, and body lengths. Expanding a row fetches the full headers and bodies on demand. The search box scans the full stored record, including request and response headers and bodies, plus URL, host, method, status, process, and user. Method, status class, and process filters combine with the search, and the same filter clause is used by paging, the live tail, and the statistics endpoint, so the charts and the grid cannot disagree.</p>
         <p>The four pies summarize domain, method, status class, and process. Each pie keeps the top categories and adds a remainder slice, so the percentages add up to the full filtered total. Clicking a slice or a legend entry applies that value as a filter. The delete control removes the agent row and all of its transactions in one transaction, and it requires a session.</p>
+        <p>The screenshots below come from an isolated Any.run Windows VM test. The agent ran in that VM and uploaded the captures to the collector. The figures are filtered to public static assets; account and login traffic is not shown.</p>
+        <figure class="shot">
+          <a href="/assets/collector-overview.png"><img src="/assets/collector-overview.png" alt="NetSnitch collector agent view with four pie charts for domain, method, status class, and process above a paged list of captured HTTPS transactions." width="1440" height="1050" loading="lazy"></a>
+          <figcaption>The collector after an Any.run Windows VM test in an isolated environment. The view is filtered to <code>assets.msn.com</code>; the pies, the match count, and the paged rows all use the same predicate.</figcaption>
+        </figure>
+        <p>Expanding a row fetches the full record on demand. This is where the storage format becomes visible: the collector keeps the reconstructed request headers, the raw HTTP/2 header block, the response headers, and the response body. The detail below is a static ad-status script from the same test, chosen because it contains no credential material.</p>
+        <figure class="shot">
+          <a href="/assets/collector-detail.png"><img src="/assets/collector-detail.png" alt="Expanded NetSnitch transaction showing request headers, the raw HTTP/2 header block, response headers, and a one-line JavaScript response body." width="1080" height="1125" loading="lazy"></a>
+          <figcaption>An expanded transaction from the same test. The request headers, the raw HTTP/2 header block, the response headers, and the response body are all preserved. This row is a static ad-status script, so no credential material is displayed.</figcaption>
+        </figure>
         <p>This is a reasonable triage design for a single analyst and a handful of agents. It is not a SIEM. The search is a set of SQL <code>LIKE</code> predicates over the stored text, not a tokenized index; at 20,000 rows per agent it is fine, and at millions it will not be. The collector also has no ingest authentication: the login protects the UI, but <code>/api/ingest</code> is open so agents can post without a password. Put the collector behind a VPN or an authenticating proxy, and treat the database as sensitive material.</p>
         <p>The agent's uploader has a related weakness: it accepts any TLS certificate for the collector connection, because the capture engine may intercept its own upload. That is a pragmatic lab choice, not a production design. Pin the collector certificate or exempt the collector host from interception if you need the upload channel to be trustworthy.</p>
       </section>

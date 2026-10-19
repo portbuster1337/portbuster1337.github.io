@@ -366,6 +366,7 @@ main {
 /* Article */
 
 .article {
+  width: min(100% - 2.5rem, var(--measure));
   max-width: var(--measure);
   margin: 0 auto;
   padding: 4.5rem 0 0;
@@ -528,6 +529,32 @@ main {
   color: var(--muted);
 }
 
+.article figure.shot {
+  width: min(calc(100vw - 2.5rem), 60rem);
+  max-width: none;
+  margin: 2.4rem 0 2.6rem 50%;
+  padding: 0.6rem;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  transform: translateX(-50%);
+}
+
+.article figure.shot a {
+  display: block;
+}
+
+.article figure.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  background: #111111;
+}
+
+.article figure.shot figcaption {
+  margin-top: 0.7rem;
+}
+
 .figure {
   margin: 2.2rem 0;
   padding: 1rem;
@@ -677,6 +704,7 @@ main {
 }
 
 .simple-page {
+  width: min(100% - 2.5rem, var(--measure));
   max-width: var(--measure);
   margin: 0 auto;
   padding: 4.5rem 0 0;
@@ -704,6 +732,10 @@ main {
   margin: 0 0 1.1rem;
 }
 
+.simple-page a {
+  overflow-wrap: anywhere;
+}
+
 .simple-page ul {
   margin: 0 0 1.4rem;
   padding-left: 1.3rem;
@@ -713,6 +745,7 @@ main {
   min-height: 54vh;
   display: grid;
   align-content: center;
+  width: min(100% - 2.5rem, 36rem);
   max-width: 36rem;
   margin: 0 auto;
   padding: 5rem 0;
@@ -803,6 +836,13 @@ main {
     font-size: 0.72rem;
   }
 
+  .article figure.shot {
+    width: 100%;
+    margin: 2rem 0;
+    padding: 0.4rem;
+    transform: none;
+  }
+
   .article table {
     font-size: 0.78rem;
   }
@@ -840,5 +880,17 @@ main {
   .article pre {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+
+  .article figure.shot {
+    width: 100%;
+    margin: 1.5rem 0;
+    padding: 0;
+    border: 0;
+    transform: none;
+  }
+
+  .article figure.shot a {
+    display: block;
   }
 }

@@ -9,6 +9,7 @@ Static source for [portbuster1337.github.io](https://portbuster1337.github.io).
 - `posts/headless-https-capture.html`: NetSnitch and HTTP Debugger IPC analysis
 - `assets/style.css`: black-and-white system-font stylesheet
 - `assets/favicon.svg`: local monochrome icon
+- `assets/collector-overview.png`, `assets/collector-detail.png`: grayscale collector screenshots from the isolated Any.run test
 - `404.html`: GitHub Pages not-found page
 - `sitemap.xml`, `robots.txt`: crawler metadata
 - `.nojekyll`: serve files without Jekyll processing
@@ -19,6 +20,7 @@ Static source for [portbuster1337.github.io](https://portbuster1337.github.io).
 - ASCII only. No em dashes, curly quotes, arrows, or other non-ASCII punctuation in page content.
 - Security writing is defensive and authorized-use scoped. No arming sequences, persistence recipes, credential theft code, or turnkey intrusion tooling.
 - When discussing dual-use techniques, describe the mechanism and the detection signal, not the operational sequence.
+- Screenshots are grayscale and limited to non-sensitive traffic from an isolated test VM.
 
 ## Local preview
 

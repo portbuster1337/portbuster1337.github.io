@@ -1,0 +1,17 @@
+flowchart TB
+  SE["Service entry<br/>0x4845DD"] -->|three calls| HELPERS["sub_4511E0 / sub_451240 / sub_452B20<br/>// three setup calls, grouped for layout"]
+  SE --> IPC["sub_452470<br/>create IPC"]
+  SE --> SCM["StartServiceCtrlDispatcherA"]
+  IPC --> CM["CreateMutexA"]
+  IPC --> CH["sub_453B90<br/>create and map channel"]
+  SCM --> SM["ServiceMain<br/>0x484440"]
+
+  classDef entry fill:#ffffff,stroke:#111111,color:#111111,stroke-width:1.5px;
+  classDef helper fill:#f4f4f4,stroke:#111111,color:#111111,stroke-width:1.5px;
+  classDef api fill:#ffffff,stroke:#111111,color:#111111,stroke-width:1.5px,stroke-dasharray:4 2;
+  classDef endnode fill:#111111,stroke:#111111,color:#ffffff,stroke-width:1.5px;
+  class SE entry;
+  class HELPERS,IPC,CH helper;
+  class SCM,CM api;
+  class SM endnode;
+  linkStyle default stroke:#111111,stroke-width:1.5px;

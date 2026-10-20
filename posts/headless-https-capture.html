@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Headless HTTPS capture on Windows: inside HTTP Debugger's IPC | Portbuster</title>
-  <meta name="description" content="A reverse engineering note on HTTP Debugger's named-section IPC, its 128-slot transaction ring, the root CA it installs, and how defenders can detect the same pattern.">
+  <title>Headless HTTPS capture on Windows: a red team view of HTTP Debugger's IPC | Portbuster</title>
+  <meta name="description" content="A red team reverse engineering note on HTTP Debugger's named-section IPC, its 128-slot plaintext ring, the root CA it installs, and the credential and cookie exposure that follows.">
   <meta name="author" content="Portbuster, independent researcher">
   <link rel="canonical" href="https://portbuster1337.github.io/posts/headless-https-capture.html">
   <meta property="og:type" content="article">
-  <meta property="og:title" content="Headless HTTPS capture on Windows: inside HTTP Debugger's IPC">
-  <meta property="og:description" content="A signed capture service, a shared-memory ring, and a root CA. How the service exposes plaintext without its GUI, and how defenders can detect the same pattern.">
+  <meta property="og:title" content="Headless HTTPS capture on Windows: a red team view of HTTP Debugger's IPC">
+  <meta property="og:description" content="A signed SYSTEM service, a shared-memory ring, and a machine-wide root CA. How an operator can drive the capture engine without the GUI, and how the plaintext ring becomes a credential and cookie harvesting surface.">
   <meta property="og:url" content="https://portbuster1337.github.io/posts/headless-https-capture.html">
   <meta property="og:image" content="https://portbuster1337.github.io/assets/collector-overview.png">
   <meta property="og:image:type" content="image/png">
@@ -38,14 +38,14 @@
   <main id="main">
     <article class="article">
       <header class="post-header">
-        <p class="kicker">Windows internals / Network capture</p>
-        <h1>Headless HTTPS capture on Windows: inside HTTP Debugger's IPC</h1>
-        <p class="dek">A signed capture service, a shared-memory ring, and a root CA. The mechanism is ordinary Windows IPC. The security lesson is what happens when plaintext is one mapping away.</p>
+        <p class="kicker">Red team / Windows internals</p>
+        <h1>Headless HTTPS capture on Windows: a red team view of HTTP Debugger's IPC</h1>
+        <p class="dek">A signed SYSTEM service, a shared-memory ring, and a machine-wide root CA. I rebuilt the control channel to learn how an operator can drive the capture engine, and what the same primitives leave behind.</p>
         <div class="post-meta">
           <time datetime="2026-10-20">20 October 2026</time>
           <span>Portbuster</span>
           <span>Independent researcher</span>
-          <span>26 min read</span>
+          <span>31 min read</span>
         </div>
       </header>
 
@@ -62,8 +62,9 @@
           <li><a href="#commands">The command path and the trust boundary</a></li>
           <li><a href="#ca">Installing trust: the CA path</a></li>
           <li><a href="#collector">From ring records to a collector</a></li>
-          <li><a href="#overlap">The infostealer overlap</a></li>
-          <li><a href="#detection">Detection</a></li>
+          <li><a href="#overlap">Where the tradecraft overlaps</a></li>
+          <li><a href="#wrong">What HTTP Debugger got wrong</a></li>
+          <li><a href="#detection">Blue team visibility and operational risk</a></li>
           <li><a href="#limitations">Limitations</a></li>
           <li><a href="#conclusion">What to take away</a></li>
           <li><a href="#references">References</a></li>
@@ -73,20 +74,23 @@
       <section id="summary">
         <h2>Summary</h2>
         <p class="lead">HTTP Debugger Pro is a Windows HTTP and HTTPS debugger. Its GUI is optional in practice. The capture engine is a Windows service that publishes plaintext transactions through named shared-memory rings. A local client that can open those objects and hold the UI mutex can drive the engine without the GUI and read the traffic.</p>
-        <p>NetSnitch is a PowerShell implementation of that client. I analyzed the 10.0.0.10 build to answer three questions: how the service exposes capture, how the ring works, and what the design looks like from a defender's seat. The short version is that the protocol is fast, simple, and almost entirely unauthenticated beyond the access control on the named objects.</p>
+        <p>I look at this stack from an operator's seat. NetSnitch is a PowerShell client I built to answer three questions: how the service exposes capture, how the ring works, and what a headless client has to do to stay in the data path without breaking it. The short version is that the control plane is fast, simple, and almost entirely unauthenticated beyond the access control on the named objects.</p>
         <ul>
           <li>There is no RPC endpoint. The UI and service communicate through six named section channels, a named mutex, and events. The service creates the objects; the UI opens them.</li>
           <li>The UI mutex is a liveness gate, not an authentication token. I did not find a caller image, signature, PID, or window check in the attach path.</li>
           <li>The transaction channel is a 128-slot ring with 0x6000-byte slots and a separate state array. The consumer must free slots, or the service stalls in the data path.</li>
-          <li>The service installs its interception CA into <code>LocalMachine\Root</code> from its own code path. The UI sends the command; the service performs the trust-store write.</li>
-          <li>Detection should prioritize root-store changes, kernel service and driver installs, named-object handles, and collector egress. Hash-only detection is weak against a signed, rebuildable stack.</li>
+          <li>The service installs its interception CA into <code>LocalMachine\Root</code> from its own code path. The UI sends the command; the service performs the trust-store write. That is the loudest and most durable part of the stack.</li>
+          <li>The trust boundary is object access, not caller identity. A SYSTEM service executes commands from any client that can open the command mapping. The global namespace, the named mutex, and the uninstaller that leaves the CA behind are design choices, not memory-safety bugs.</li>
+          <li>The ring carries <code>Authorization</code> headers, <code>Cookie</code> values, form bodies, OAuth tokens, and API keys in plaintext. An intrusion operator can stage those records and exfiltrate them over normal HTTPS; no browser profile or cookie database is needed.</li>
+          <li>For a red team, the read path and the command path have different costs. Mapping the transaction channel is quiet but still puts a consumer in the data path. Installing the CA and changing filter rules is more capable and leaves artifacts that outlive the operation.</li>
+          <li>For a blue team, the durable signals are root-store changes, kernel service and driver installs, named-object handles, and collector egress. Hash-only detection is weak against a signed, rebuildable stack.</li>
         </ul>
-        <p>NetSnitch is a diagnostics and research tool. It is not an infostealer. The reason it matters to defenders is that the primitives it uses are the same primitives an infostealer can use. That overlap is the subject of the last third of this post.</p>
+        <p>NetSnitch is a diagnostics and research tool. It is not an infostealer. The reason it matters to an operator is that the primitives it uses are the same primitives an intrusion can reuse. The reason it matters to a blue team is that the artifacts are shared. That overlap is the subject of the last third of this post.</p>
       </section>
 
       <section id="scope">
         <h2>Scope and build</h2>
-        <p>I analyzed the service and UI binaries from the HTTP Debugger Pro 10.0.0.10 installer, plus the driver the service loads. The hashes below identify the exact files. Offsets and structure layouts are build-specific.</p>
+        <p>I analyzed the service and UI binaries from the HTTP Debugger Pro 10.0.0.10 installer, plus the driver the service loads. The hashes below identify the exact files. Offsets and structure layouts are build-specific, and that matters: a client that hard-codes them is tied to one build.</p>
         <div class="table-wrap">
           <table>
             <thead>
@@ -124,33 +128,28 @@
         </div>
         <div class="callout">
           <strong>What this post does not contain</strong>
-          <p>A working arming sequence, selector values, a persistence recipe, or a copy-paste collector deployment. The project repository contains the implementation and usage details. This post covers the mechanism and the detection signal.</p>
+          <p>A working arming sequence, selector values, a persistence recipe, or a copy-paste collector deployment. The project repository contains the implementation and usage details. This post covers the architecture, the reverse engineering, the operational tradeoffs, and the visibility a blue team gets from the same stack.</p>
         </div>
       </section>
 
       <section id="service">
         <h2>The service is the capture engine</h2>
-        <p>The first thing to establish is that the UI is not doing the capturing. The service is a real Windows service. Its ServiceMain is at <code>sub_484440</code>, and its SCM entry point calls <code>StartServiceCtrlDispatcherA</code> with the service name <code>HTTPDebuggerPro</code>. Before that call, it initializes the IPC surface with <code>sub_452470</code>:</p>
-        <figure class="code">
-          <figcaption>Service entry, SCM dispatch and IPC initialization</figcaption>
-          <pre><code>004845DD  call sub_4511E0
-004845E2  mov  ecx, eax
-004845E4  call sub_452470              ; create named IPC objects
-004845E9  test eax, eax
-004845EB  je   loc_48498D
-004845F1  call sub_451240
-004845F6  mov  ecx, eax
-004845F8  call sub_452B20              ; second setup path
-004845FD  test eax, eax
-004845FF  je   loc_48498D
-00484605  lea  eax, [esp+0x20]
-00484609  mov  dword ptr [esp+0x20], 0x82B3C4   ; "HTTPDebuggerPro"
-00484611  push eax
-00484612  mov  dword ptr [esp+0x28], 0x484440   ; ServiceMain
-0048462A  call dword ptr [0x74F074]           ; StartServiceCtrlDispatcherA</code></pre>
+        <p>The first thing an operator has to establish is that the UI is not doing the capturing. The service is a real Windows service. Its ServiceMain is at <code>sub_484440</code>, and its SCM entry point calls <code>StartServiceCtrlDispatcherA</code> with the service name <code>HTTPDebuggerPro</code>. Before that call, it initializes the IPC surface with <code>sub_452470</code>. That order is what makes a headless client possible:</p>
+        <figure class="figure diagram">
+          <a href="/assets/diagrams/service-entry-flow.svg" aria-label="Open the full-size Mermaid graph of the service entry">
+            <img src="/assets/diagrams/service-entry-flow.svg" alt="Mermaid graph of the service entry. Three basic blocks show the first setup and IPC creation, the second setup path, and the SCM dispatch table. Every instruction line is followed by a comment." width="895" height="1200" loading="lazy" decoding="async">
+          </a>
+          <figcaption>Figure 1. Mermaid graph of the service entry. Each node is a basic block; every instruction line is followed by a comment. Solid edges are control flow, and labels show the branch condition. On a narrow screen, scroll inside the graph to pan; tap it to open the full-size SVG.</figcaption>
         </figure>
         <p>The order is the point. The named objects exist before the service reports to the SCM. A client does not have to wait for a UI to create them, and the service does not need the UI to be running in order to own the capture engine. The same binary also handles an <code>/install</code> argument at <code>0x484646</code>, which is how the service installs itself and its driver.</p>
+        <figure class="figure diagram diagram-wide">
+          <a href="/assets/diagrams/service-call-graph.svg" aria-label="Open the full-size Mermaid service call graph">
+            <img src="/assets/diagrams/service-call-graph.svg" alt="Mermaid call graph for the service path. The service entry calls three grouped setup helpers, sub_452470 to create the IPC surface, and StartServiceCtrlDispatcherA. sub_452470 calls CreateMutexA and sub_453B90. The SCM dispatch calls ServiceMain at 0x484440." width="1010" height="312" loading="lazy" decoding="async">
+          </a>
+          <figcaption>Figure 2. Mermaid call graph for the service path. Edges are calls. Shaded nodes are internal helpers, dashed nodes are Windows APIs, and the black node is the ServiceMain entry point. The three setup helpers are grouped for layout; Figure 1 expands the sequence.</figcaption>
+        </figure>
         <p>The service imports <code>CreateServiceA</code>, <code>CreateServiceW</code>, <code>OpenSCManagerA</code>, <code>RegisterServiceCtrlHandlerA</code>, and <code>SetServiceStatus</code>. It can install and manage its own service. The driver side is a WFP callout: the service opens <code>\\.\CtrlSM</code>, loads <code>drv2\x64\netfilter2.sys</code> from its own directory, and uses <code>DeviceIoControl</code> to configure the filter. RTTI in the binary includes <code>NetFilterHelper</code> and <code>NetFilterEventHandler</code>, which is consistent with a C++ wrapper around the driver.</p>
+        <p>For a red team, the service is the valuable part of the stack. It holds the driver handle, terminates TLS, and writes the decrypted records. It also performs the privileged commands with its own SYSTEM token. A client that can drive it is not just reading memory; it is asking a SYSTEM process to change the host.</p>
         <p>The service does not capture by opening a raw socket and sniffing. It sits in the connection path. The driver redirects matching TCP flows to the service, the service terminates TLS with a locally trusted leaf, re-encrypts the request to the origin, and writes the plaintext request and response records to the transaction ring. That is why the service is the right place to look for plaintext: the decryption happens there, not in the browser.</p>
         <p>The UI's WinINET and WinHTTP imports are for its own update and licensing traffic. They are not the capture control channel. The capture control channel is the shared-memory ring.</p>
       </section>
@@ -158,7 +157,7 @@
       <section id="no-rpc">
         <h2>A service with no RPC</h2>
         <p>The imports tell the story before any disassembly. The service imports the file-mapping, mutex, and event APIs from KERNEL32. It does not import the RPC runtime, and it does not create a named pipe for the UI. There is no COM server registration in the attach path and no socket listener for control messages. The only IPC primitives are named sections, a mutex, and events.</p>
-        <p>Strings in the service give the object names. The UI's attach function confirms which ones it opens.</p>
+        <p>For an operator, that is a small and stable interface. There is no IDL to recover and no service endpoint to authenticate to. The protocol is a section header, a ring layout, and a set of object names. Strings in the service give the names; the UI's attach function confirms which ones it opens.</p>
         <div class="table-wrap">
           <table>
             <thead>
@@ -175,89 +174,47 @@
             </tbody>
           </table>
         </div>
-        <p>This is a deliberate design choice. A shared-memory ring is a good fit for per-request records: no serialization RPC, no per-record syscall beyond the event, and the consumer can map the data once. It is also a design choice with a security consequence: the service is a broker of plaintext, and the only thing between a local process and that plaintext is the access control on the named objects.</p>
+        <p>This is a deliberate design choice. A shared-memory ring is a good fit for per-request records: no serialization RPC, no per-record syscall beyond the event, and the consumer can map the data once. For an operator, the control surface is the object namespace. For a blue team, the same property means process ancestry and network telemetry may miss the control path entirely; the section and mutex handles are the evidence.</p>
       </section>
 
       <section id="creating">
         <h2>Creating the IPC surface</h2>
-        <p><code>sub_452470</code> creates the mutex first, then calls the same helper for each channel. The mutex is created with <code>CreateMutexA</code> and the name <code>Global\HttpDebuggerUiStarted</code>. The channel helper is <code>sub_453B90</code>; it builds a security descriptor and calls <code>CreateFileMappingA</code> with <code>INVALID_HANDLE_VALUE</code>, then maps the section with <code>MapViewOfFile</code> and <code>FILE_MAP_ALL_ACCESS</code>.</p>
-        <figure class="code">
-          <figcaption>Service IPC setup, mutex and first channel</figcaption>
-          <pre><code>004524D2  push 0x829270              ; "Global\HttpDebuggerUiStarted"
-004524D7  push 0
-004524D9  push [ebp-0xAC]
-004524E2  call dword ptr [0x74F1D8]  ; CreateMutexA
-004524E8  mov  [esi+0x0C], eax
-004524EB  test eax, eax
-004524ED  je   loc_45295B
-004524F3  push 0x1E
-004524F5  push 0x829290              ; "Global\HttpDebuggerIpcSettings"
-...
-00452538  push ebx                   ; channel flags
-00452539  push ecx                   ; security attributes
-0045253A  push eax                   ; name object
-0045253B  lea  ecx, [esi+0x20]       ; destination channel
-0045253E  call sub_453B90           ; create Settings channel
-...
-004525A6  push 0x8292D8              ; "Global\HttpDebuggerIpcEngineCommand"
-...
-0045268A  push 0x82934C              ; "Global\HttpDebuggerIpcHttpTransaction"
-004526C1  push 0x80                  ; 128 slots
-004526C8  lea  ecx, [esi+0x480]       ; destination transaction channel
-004526CE  call sub_453B90</code></pre>
+        <p><code>sub_452470</code> creates the mutex first, then calls the same helper for each channel. The mutex is created with <code>CreateMutexA</code> and the name <code>Global\HttpDebuggerUiStarted</code>. The channel helper is <code>sub_453B90</code>; it builds a security descriptor and calls <code>CreateFileMappingA</code> with <code>INVALID_HANDLE_VALUE</code>, then maps the section with <code>MapViewOfFile</code> and <code>FILE_MAP_ALL_ACCESS</code>. For an operator, that is a clean map: one mutex, then one helper repeated per channel. For a blue team, the repeated helper is why a single object-name rule covers most of the surface.</p>
+        <figure class="figure diagram">
+          <a href="/assets/diagrams/service-ipc-flow.svg" aria-label="Open the full-size Mermaid graph of the service IPC setup">
+            <img src="/assets/diagrams/service-ipc-flow.svg" alt="Mermaid graph of the service IPC setup. Three basic blocks show the UI mutex creation, the Settings channel creation, and the command and transaction channel creation. Every instruction line is followed by a comment." width="787" height="1376" loading="lazy" decoding="async">
+          </a>
+          <figcaption>Figure 3. Mermaid graph of the service IPC setup. The success and failure edges follow the mutex check; the later blocks create the Settings, command, and transaction channels through the same helper. Omitted argument setup is marked in the graph.</figcaption>
         </figure>
-        <figure class="code">
-          <figcaption>Named section creation and mapping inside the channel helper</figcaption>
-          <pre><code>00454103  push 0
-00454105  push 4                     ; PAGE_READWRITE
-00454107  push [ebp-0x58]            ; security attributes
-0045410E  push -1                    ; INVALID_HANDLE_VALUE
-00454110  call dword ptr [0x74F1A4]  ; CreateFileMappingA
-...
-00454133  push 0xF001F               ; FILE_MAP_ALL_ACCESS
-00454138  push esi                   ; section handle
-00454139  call dword ptr [0x74F1A0]  ; MapViewOfFile</code></pre>
+        <figure class="figure diagram">
+          <a href="/assets/diagrams/channel-map-flow.svg" aria-label="Open the full-size Mermaid graph of the section mapping helper">
+            <img src="/assets/diagrams/channel-map-flow.svg" alt="Mermaid graph of the named section creation and mapping. The helper creates a page-file-backed section with CreateFileMappingA and maps it with MapViewOfFile." width="529" height="672" loading="lazy" decoding="async">
+          </a>
+          <figcaption>Figure 4. Mermaid graph of the channel helper. The service creates a page-file-backed section and maps it read/write. The same helper is called for each channel.</figcaption>
         </figure>
-        <p><code>INVALID_HANDLE_VALUE</code> means the section is backed by the paging file, not a file on disk. That is why the objects are fast and why they leave no capture file behind. The name is the only handle a client needs.</p>
-        <p>The transaction channel is built with a capacity argument of <code>0x80</code>. The consumer header validation in NetSnitch confirms a stride of <code>0x6000</code>, so the data region is 128 x 0x6000 = 3,145,728 bytes, plus 512 bytes of state. The service also creates a <code>SettingsResult</code> channel; the UI attach function I traced does not open it, which suggests the protocol has more surface than the minimum client uses.</p>
+        <p><code>INVALID_HANDLE_VALUE</code> means the section is backed by the paging file, not a file on disk. That is why the objects are fast and why they leave no capture file behind. The name is the only handle a client needs. That is convenient for an operator and awkward for attribution: the object is ephemeral, and the name is not proof of who created it.</p>
+        <p>The transaction channel is built with a capacity argument of <code>0x80</code>. The consumer header validation in NetSnitch confirms a stride of <code>0x6000</code>, so the data region is 128 x 0x6000 = 3,145,728 bytes, plus 512 bytes of state. The service also creates a <code>SettingsResult</code> channel; the UI attach function I traced does not open it, which suggests the protocol has more surface than the minimum client uses. A client only needs the transaction channel to read traffic; the extra channels are part of the command and settings path.</p>
       </section>
 
       <section id="ui">
         <h2>The UI is just another client</h2>
-        <p>The UI attach function is <code>sub_4167A0</code>. It does not call a service API. It opens the mutex with <code>OpenMutexA</code> and <code>MUTEX_ALL_ACCESS</code>, then calls <code>sub_417A90</code> for each channel.</p>
-        <figure class="code">
-          <figcaption>UI attach, mutex and channel names</figcaption>
-          <pre><code>004167F0  push 0xADEC30              ; "Global\HttpDebuggerUiStarted"
-004167F5  push 0
-004167F7  push 0x1F0001              ; MUTEX_ALL_ACCESS
-004167FF  call dword ptr [0xA5262C]  ; OpenMutexA
-00416805  mov  [esi+0x0C], eax
-00416808  test eax, eax
-0041680A  je   loc_416D01
-00416812  push 0xADEC50              ; "Global\HttpDebuggerIpcSettings"
-...
-0041685D  push 0xADEC98              ; "Global\HttpDebuggerIpcEngineCommand"
-...
-004168AD  push 0xADECBC              ; "Global\HttpDebuggerIpcHttpNotification"
-...
-004168F8  push 0xADECE4              ; "Global\HttpDebuggerIpcConnectionInfo"
-...
-0041693F  push 0xADED0C              ; "Global\HttpDebuggerIpcHttpTransaction"</code></pre>
+        <p>The UI attach function is <code>sub_4167A0</code>. It is a useful reference implementation for a red team client because it does not call a service API. It opens the mutex with <code>OpenMutexA</code> and <code>MUTEX_ALL_ACCESS</code>, then calls <code>sub_417A90</code> for each channel.</p>
+        <figure class="figure diagram">
+          <a href="/assets/diagrams/ui-attach-flow.svg" aria-label="Open the full-size Mermaid graph of the UI attach path">
+            <img src="/assets/diagrams/ui-attach-flow.svg" alt="Mermaid graph of the UI attach path. The UI opens the service-created mutex, then opens the five channel names and passes each one to sub_417A90 for mapping." width="807" height="1176" loading="lazy" decoding="async">
+          </a>
+          <figcaption>Figure 5. Mermaid graph of the UI attach path. The mutex is opened with <code>MUTEX_ALL_ACCESS</code>; the channel names are then passed to the same mapping helper used by the service. Dashed nodes are failure paths or helper summaries.</figcaption>
         </figure>
         <p>The mapping helper uses <code>CreateFileMappingA</code> with <code>INVALID_HANDLE_VALUE</code> and <code>FILE_MAP_ALL_ACCESS</code>, just like the service. Because the service created the objects first, this is an open-or-create operation. In the normal startup order, it opens the existing sections.</p>
-        <figure class="code">
-          <figcaption>UI section mapping</figcaption>
-          <pre><code>00417E77  push 0
-00417E79  push 4                     ; PAGE_READWRITE
-00417E7B  push [ebp-0x54]            ; security attributes
-00417E82  push -1                    ; INVALID_HANDLE_VALUE
-00417E84  call dword ptr [0xA52620]  ; CreateFileMappingA
-...
-00417EA7  push 0xF001F               ; FILE_MAP_ALL_ACCESS
-00417EAD  call dword ptr [0xA5261C]  ; MapViewOfFile</code></pre>
+        <figure class="figure diagram">
+          <a href="/assets/diagrams/ui-map-flow.svg" aria-label="Open the full-size Mermaid graph of the UI section mapping">
+            <img src="/assets/diagrams/ui-map-flow.svg" alt="Mermaid graph of the UI section mapping. The UI creates a page-file-backed section and maps it with MapViewOfFile." width="529" height="624" loading="lazy" decoding="async">
+          </a>
+          <figcaption>Figure 6. Mermaid graph of the UI mapping helper. The sequence mirrors the service helper in Figure 4; only the process context and addresses differ.</figcaption>
         </figure>
-        <p>The mutex deserves attention. The service creates it; the UI opens it with <code>MUTEX_ALL_ACCESS</code>; the client holds it while arming. The name is <code>UiStarted</code>, and the semantics are exactly what the name suggests: the service treats the mutex as evidence that a UI is present. It is not a nonce, a signature, or a proof of image identity. A process that can open the mutex can present the same evidence.</p>
-        <p>I did not find a caller identity check in this attach path. The service does not compare the client's PID, image path, signer, or window handle. The gate is the object access. That is the central security property of the design, and it is the reason the protocol can be driven by a non-GUI client.</p>
+        <p>The mutex deserves attention. The service creates it; the UI opens it with <code>MUTEX_ALL_ACCESS</code>; the client holds it while the engine is active. The name is <code>UiStarted</code>, and the semantics are exactly what the name suggests: the service treats the mutex as evidence that a UI is present. It is not a nonce, a signature, or a proof of image identity. A process that can open the mutex can present the same evidence.</p>
+        <p>For an operator, this is the difference between needing the vendor's GUI and writing a small client. For a blue team, a process holding the mutex without the UI is a useful anomaly. The mutex is not a strong control, but the mismatch is still a signal.</p>
+        <p>I did not find a caller identity check in this attach path. The service does not compare the client's PID, image path, signer, or window handle. The gate is the object access. That is the central security property of the design, and it is the reason the protocol can be driven by a non-GUI client. It is also the reason the UI is not a security boundary.</p>
         <div class="callout">
           <strong>Not a remote bug</strong>
           <p>This is a local design property. The client needs access to the global named objects. In my test the client ran elevated, and I did not establish whether a standard user can open the same objects on a default install. The DACL on the section is the deciding factor. Treat this as a local trust-boundary question, not an unauthenticated network vulnerability.</p>
@@ -266,7 +223,7 @@
 
       <section id="ring">
         <h2>The ring, in detail</h2>
-        <p>Each channel is a header mapping and one or more data mappings. The header is a small struct of 32-bit words. The consumer validates it before parsing:</p>
+        <p>Each channel is a header mapping and one or more data mappings. The header is a small struct of 32-bit words. A ring is a good target for an operator because one mapping gives you the record layout and one state array gives you the producer-consumer handshake. The consumer validates the header before parsing:</p>
         <div class="table-wrap">
           <table>
             <thead>
@@ -290,7 +247,7 @@
           <li><code>1</code>: the producer is writing.</li>
           <li><code>2</code>: ready. The consumer may read and then set the slot back to <code>0</code>.</li>
         </ul>
-        <p>The producer writes only to a free slot, sets the state to 2, updates the write cursor, and pulses the filled event. The consumer reads a ready slot, copies the record, sets the state back to 0, advances the read cursor, and pulses the available event. The service and the UI are a single-producer, single-consumer pair; the state word is the handshake.</p>
+        <p>The producer writes only to a free slot, sets the state to 2, updates the write cursor, and pulses the filled event. The consumer reads a ready slot, copies the record, sets the state back to 0, advances the read cursor, and pulses the available event. The service and the UI are a single-producer, single-consumer pair; the state word is the handshake. For an operator, the important point is that the consumer is part of the system, not a passive observer.</p>
         <p>Each record starts with a 16-byte chunk header:</p>
         <div class="table-wrap">
           <table>
@@ -312,119 +269,37 @@
         <p>HTTP/2 is bridged to an HTTP/1-shaped record. The engine writes <code>x-exhdr-method</code>, <code>x-exhdr-authority</code>, <code>x-exhdr-path</code>, and <code>x-exhdr-streamid</code> pseudo-headers. A decoder that only looks for a request line will see HTTP/2 as a set of headers with no method; the pseudo-headers are how the method, authority, and path are recovered.</p>
         <p>The ring is bounded, and the producer does not grow it. If the consumer falls behind, the service waits for a free slot and then drops the record. In testing, a full ring produced waits of roughly 500 ms per record, which is enough to stall the user's browsing because the service is in the data path. That is why the consumer contract includes freeing slots, not just reading them. A read-only observer that never sets state 2 back to 0 is not a neutral observer; it eventually becomes a traffic problem.</p>
         <p>There is a second subtlety: the request records are short-lived. The service writes the request, pairs it with the response, and reuses the slot. A reader that follows the write cursor and reads each slot once will miss many requests and end up with response-only orphans. The practical fix is to rescan all slots and compare a content signature, which is what NetSnitch does. The request record lives for the network round trip, tens of milliseconds, so a 1 ms scan catches it without pinning a core.</p>
-        <p>The transaction mapping is not encrypted. It contains the decrypted request and response bytes. The service has already done the TLS work; the ring is the plaintext handoff. That is the whole point of the architecture, and it is why the mapping's DACL matters more than the wire protocol.</p>
-        <figure class="figure">
-          <svg viewBox="0 0 900 410" role="img" aria-labelledby="fig1-title fig1-desc" xmlns="http://www.w3.org/2000/svg">
-            <title id="fig1-title">HTTP Debugger capture and IPC architecture</title>
-            <desc id="fig1-desc">A client holds the UI mutex and writes commands to the service. The service drives a WFP driver, installs a root CA, and publishes plaintext records to a 128-slot transaction ring. The client drains the ring and uploads to a collector.</desc>
-            <defs>
-              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="#111111"/>
-              </marker>
-            </defs>
-            <rect x="1" y="1" width="898" height="408" fill="#ffffff" stroke="#d8d8d8"/>
-            <g font-family="Arial, Helvetica, sans-serif" fill="#111111">
-              <rect x="30" y="50" width="200" height="95" fill="#ffffff" stroke="#111111" stroke-width="1.5"/>
-              <text x="45" y="76" font-size="14" font-weight="700">Client</text>
-              <text x="45" y="97" font-size="11" fill="#5c5c5c">PowerShell or UI</text>
-              <text x="45" y="114" font-size="11" fill="#5c5c5c">Holds UI mutex</text>
-              <text x="45" y="131" font-size="11" fill="#5c5c5c">Writes commands</text>
-
-              <rect x="330" y="50" width="230" height="120" fill="#f6f6f6" stroke="#111111" stroke-width="1.5"/>
-              <text x="345" y="76" font-size="14" font-weight="700">HTTPDebuggerSvc.exe</text>
-              <text x="345" y="97" font-size="11" fill="#5c5c5c">IPC broker, TLS engine</text>
-              <text x="345" y="114" font-size="11" fill="#5c5c5c">SettingsObserver</text>
-              <text x="345" y="131" font-size="11" fill="#5c5c5c">32-bit service, SYSTEM</text>
-              <text x="345" y="148" font-size="11" fill="#5c5c5c">Writes plaintext records</text>
-
-              <rect x="665" y="50" width="205" height="95" fill="#ffffff" stroke="#111111" stroke-width="1.5"/>
-              <text x="680" y="76" font-size="14" font-weight="700">CtrlSM.sys</text>
-              <text x="680" y="97" font-size="11" fill="#5c5c5c">NetFilter WFP driver</text>
-              <text x="680" y="114" font-size="11" fill="#5c5c5c">64-bit, WHQL signed</text>
-              <text x="680" y="131" font-size="11" fill="#5c5c5c">Sits in TCP 80/443 path</text>
-
-              <rect x="665" y="190" width="205" height="70" fill="#ffffff" stroke="#111111" stroke-width="1.5"/>
-              <text x="680" y="216" font-size="14" font-weight="700">LocalMachine\Root</text>
-              <text x="680" y="237" font-size="11" fill="#5c5c5c">HTTP DEBUGGER CA</text>
-              <text x="680" y="252" font-size="11" fill="#5c5c5c">Machine-wide trust</text>
-
-              <rect x="330" y="290" width="230" height="85" fill="#ffffff" stroke="#111111" stroke-width="1.5"/>
-              <text x="345" y="316" font-size="14" font-weight="700">HttpTransaction ring</text>
-              <text x="345" y="337" font-size="11" fill="#5c5c5c">128 slots x 0x6000</text>
-              <text x="345" y="354" font-size="11" fill="#5c5c5c">state array at total + i*4</text>
-              <text x="345" y="369" font-size="11" fill="#5c5c5c">plaintext bytes</text>
-
-              <rect x="30" y="290" width="200" height="85" fill="#ffffff" stroke="#111111" stroke-width="1.5"/>
-              <text x="45" y="316" font-size="14" font-weight="700">Collector</text>
-              <text x="45" y="337" font-size="11" fill="#5c5c5c">SQLite + web UI</text>
-              <text x="45" y="354" font-size="11" fill="#5c5c5c">Search, filters, charts</text>
-              <text x="45" y="369" font-size="11" fill="#5c5c5c">20k rows per agent</text>
-
-              <line x1="230" y1="97" x2="330" y2="97" stroke="#111111" stroke-width="1.5" marker-end="url(#arrow)"/>
-              <text x="238" y="88" font-size="10" fill="#5c5c5c">command ring</text>
-
-              <line x1="445" y1="170" x2="445" y2="290" stroke="#111111" stroke-width="1.5" marker-end="url(#arrow)"/>
-              <text x="452" y="235" font-size="10" fill="#5c5c5c">records</text>
-
-              <line x1="330" y1="332" x2="230" y2="332" stroke="#111111" stroke-width="1.5" marker-end="url(#arrow)"/>
-              <text x="238" y="323" font-size="10" fill="#5c5c5c">drain + upload</text>
-
-              <line x1="560" y1="97" x2="665" y2="97" stroke="#111111" stroke-width="1.5" marker-end="url(#arrow)"/>
-              <text x="570" y="88" font-size="10" fill="#5c5c5c">DeviceIoControl</text>
-
-              <line x1="560" y1="150" x2="665" y2="220" stroke="#111111" stroke-width="1.5" stroke-dasharray="4 4" marker-end="url(#arrow)"/>
-              <text x="570" y="172" font-size="10" fill="#5c5c5c">CA install</text>
-
-              <text x="30" y="395" font-size="10" fill="#858585">Named objects live in the global namespace. The service is the only component that writes the transaction ring.</text>
-            </g>
-          </svg>
-          <figcaption>Figure 1. The control plane is a set of named sections and a mutex. The driver is in the TCP path; the service is the plaintext broker.</figcaption>
+        <p>The transaction mapping is not encrypted. It contains the decrypted request and response bytes. The service has already done the TLS work; the ring is the plaintext handoff. That is the whole point of the architecture, and it is why the mapping's DACL matters more than the wire protocol. If you can map it, you can read it. If you cannot, the rest of the protocol does not help.</p>
+        <figure class="figure diagram diagram-wide">
+          <a href="/assets/diagrams/architecture.svg" aria-label="Open the full-size Mermaid architecture graph">
+            <img src="/assets/diagrams/architecture.svg" alt="Mermaid architecture graph. An authorized red team client holds the UI mutex and maps named sections. It sends commands to HTTPDebuggerSvc.exe, which imports a LocalMachine root CA, programs WFP rules, and publishes plaintext records to a 128-slot transaction ring. The client drains the ring and uploads to a collector." width="1133" height="1128" loading="lazy" decoding="async">
+          </a>
+          <figcaption>Figure 7. Mermaid graph of the capture and IPC architecture. The client is the operator-controlled process; the service is the SYSTEM broker; the driver is in the TCP path; the transaction ring is the plaintext handoff. The collector is a separate egress and staging risk.</figcaption>
         </figure>
       </section>
 
       <section id="commands">
         <h2>The command path and the trust boundary</h2>
-        <p>The command ring uses the same chunk header and a 12-byte command body. The first word is the selector; the next two words are reserved in the records I observed; an optional payload follows. The service dispatches the selector through an internal command table. The exact ordinals are version-specific, and I am not reproducing them here. The public project documentation covers the implementation for researchers who need to reproduce the setup.</p>
-        <p>The important selectors are the ones that install the CA, build the port rules, apply the rules profile, and complete the user handshake. The order is load-bearing: the CA must be trusted before 443 is intercepted, the rules must be built before they can be applied, and the engine does not publish transactions until the handshake completes. The settings profile is separate: it is pushed over the Settings channel as a length-prefixed XML document. Writing <code>settings.xml</code> to disk is not enough; the service's live profile is set by the IPC push.</p>
+        <p>The command ring uses the same chunk header and a 12-byte command body. The first word is the selector; the next two words are reserved in the records I observed; an optional payload follows. The service dispatches the selector through an internal command table. The exact ordinals are version-specific and are not reproduced here. The public project documentation covers the implementation.</p>
+        <p>The commands that matter are the ones that install the CA, build the port rules, apply the rules profile, and complete the user handshake. The order is load-bearing: the CA must be trusted before 443 is intercepted, the rules must be built before they can be applied, and the engine does not publish transactions until the handshake completes. The settings profile is separate: it is pushed over the Settings channel as a length-prefixed XML document. Writing <code>settings.xml</code> to disk is not enough; the service's live profile is set by the IPC push.</p>
         <p>The service validates the selector and logs invalid ones. That validation is a protocol check, not an authorization check. Once the record is accepted, the service performs the action with its own token. The client does not need to be the UI, and it does not need to present a certificate. It needs a writable mapping and the mutex.</p>
         <p>The result is a local confused-deputy pattern. The service runs with more privilege than the client, but it accepts commands from a client whose only credential is access to the object. If the DACL allows a lower-privileged process to open the command ring, that process can ask the service to install a CA, change the filter rules, or publish plaintext. If the DACL does not, the boundary holds. The protocol does not add a second check.</p>
+        <p>For a red team, this is the main tradeoff. The read path is a memory mapping and a consumer loop. The command path is a request to a SYSTEM service to change trust, filter rules, and engine state. The read path is quieter but still puts a consumer in the data path. The command path is more capable but leaves durable artifacts. The objective should decide which one is in scope, not convenience.</p>
       </section>
 
       <section id="ca">
         <h2>Installing trust: the CA path</h2>
-        <p>HTTPS interception only works if the client trusts the interception CA. The service handles that itself. The binary imports the CRYPT32 certificate-store APIs and contains the CA name <code>HTTP DEBUGGER CA for DEBUG ONLY</code> and a file name <code>HTTP DEBUGGER CA for DEBUG ONLY 3.cer</code>. The import routine is <code>sub_4DA950</code>.</p>
-        <figure class="code">
-          <figcaption>Certificate store selection and root import</figcaption>
-          <pre><code>004DA9AD  cmp  dword ptr [ebp+0x14], 0
-004DA9B1  jne  0x4DA9C1
-004DA9B3  mov  dword ptr [ebp-0x58], 0x20
-004DA9BA  mov  dword ptr [ebp-0x50], 0x20000  ; CERT_SYSTEM_STORE_LOCAL_MACHINE
-...
-004DA9E8  lea  eax, [ebp-0x44]              ; converted store name, "Root"
-004DA9EB  push eax
-004DA9EC  mov  ecx, [ebp-0x50]
-004DA9EF  push ecx                         ; flags: LocalMachine
-004DA9F0  push 0
-004DA9F2  push 0x10001                     ; X509_ASN_ENCODING | PKCS_7_ASN_ENCODING
-004DA9F7  push 0xA                         ; CERT_STORE_PROV_SYSTEM_W
-004DA9F9  call dword ptr [0x74F110]         ; CertOpenStore
-...
-004DAA0A  lea  edx, [ebp-0x4C]              ; cert context out
-004DAA0D  push edx
-004DAA0E  push 2                           ; CERT_STORE_ADD_USE_EXISTING
-004DAA10  mov  eax, [ebp+0xC]              ; cert length
-004DAA13  push eax
-004DAA14  mov  ecx, [ebp+8]                ; cert bytes
-004DAA17  push ecx
-004DAA18  push 1                           ; X509_ASN_ENCODING
-004DAA1A  mov  edx, [ebp-0x48]              ; store handle
-004DAA1D  push edx
-004DAA1E  call dword ptr [0x74F0F4]         ; CertAddEncodedCertificateToStore</code></pre>
+        <p>HTTPS interception only works if the client trusts the interception CA. The service handles that itself. The binary imports the CRYPT32 certificate-store APIs and contains the CA name <code>HTTP DEBUGGER CA for DEBUG ONLY</code> and a file name <code>HTTP DEBUGGER CA for DEBUG ONLY 3.cer</code>. The import routine is <code>sub_4DA950</code>. For an operator, this is the step that turns a network filter into transparent plaintext. For a blue team, it is the most durable artifact in the stack.</p>
+        <figure class="figure diagram">
+          <a href="/assets/diagrams/ca-import-flow.svg" aria-label="Open the full-size Mermaid graph of the CA import path">
+            <img src="/assets/diagrams/ca-import-flow.svg" alt="Mermaid graph of the CA import path. The function selects the LocalMachine store scope, opens the Root store with CertOpenStore, and adds the encoded certificate with CertAddEncodedCertificateToStore. Every instruction line is followed by a comment." width="697" height="1520" loading="lazy" decoding="async">
+          </a>
+          <figcaption>Figure 8. Mermaid graph of the certificate import path. The zero branch selects <code>LocalMachine</code>; the nonzero branch is outside this excerpt. The black node is the resulting machine-wide trust anchor, which survives service removal.</figcaption>
         </figure>
         <p>The function is a general-purpose importer. It takes the certificate bytes, a length, a store name, and a scope flag. The caller passes <code>Root</code> and zero for the scope, which selects <code>LocalMachine</code>. The store provider is the wide-character system-store provider, so the store name is converted to the form that provider expects before the call. The add disposition is <code>CERT_STORE_ADD_USE_EXISTING</code>, so a repeat install updates the existing entry instead of creating duplicates.</p>
-        <p>The CA is installed by the service, not by the UI. The UI sends the command; the service performs the trust-store write. That is why the root-store event is attributable to the service process, and why a detection that only watches PowerShell will miss the actual trust change.</p>
+        <p>The CA is installed by the service, not by the UI. The UI sends the command; the service performs the trust-store write. A registry or ETW event for that write should show the service process, not the UI, so a blue team should not limit the search to PowerShell or the UI process. An operator should assume that the trust change is visible at the service boundary.</p>
         <p>Once the CA is trusted, the service can mint a leaf for any host it intercepts, present it to the client, and relay the connection to the origin. The client sees a valid chain because the root is in <code>LocalMachine\Root</code>. Certificate pinning and applications that ship their own trust store will fail closed; the interception is not universal. But for the large set of applications that use the Windows trust store and do not pin, the plaintext is available.</p>
-        <p>The CA outlives the service. The project's uninstall path stops and deletes the service but does not remove the root CA. That is a deliberate choice in the tool and a useful detection opportunity: the trust anchor remains after the capture stack is gone. If you find the CA without the service, you have found a persistence artifact.</p>
+        <p>The CA outlives the service. The project's uninstall path stops and deletes the service but does not remove the root CA. For an operator, that is a cleanup problem and a reason to treat the trust anchor as a host change, not a transient tool artifact. For a blue team, it is a persistence artifact: the trust anchor remains after the capture stack is gone. If you find the CA without the service, you have found a trust-store change that outlived its installer.</p>
         <div class="callout">
           <strong>What the CA is not</strong>
           <p>It is not a vulnerability in TLS. It is the normal local trust model doing what it is designed to do. The security question is who can add a root and whether the endpoint notices.</p>
@@ -433,28 +308,29 @@
 
       <section id="collector">
         <h2>From ring records to a collector</h2>
-        <p>Reading the ring is only half the tool. The other half is turning transient slots into a searchable record. NetSnitch's pump groups records by transaction ID, reconstructs the request line and URL from HTTP/1 or the <code>x-exhdr-*</code> pseudo-headers, inflates gzip or deflate bodies by magic bytes, and waits for a short settle window before emitting a transaction. It filters the collector's own uploads by host so a capture does not feed back into itself.</p>
+        <p>Reading the ring is only half the operator problem. The other half is turning transient slots into a searchable record. NetSnitch's pump groups records by transaction ID, reconstructs the request line and URL from HTTP/1 or the <code>x-exhdr-*</code> pseudo-headers, inflates gzip or deflate bodies by magic bytes, and waits for a short settle window before emitting a transaction. It filters the collector's own uploads by host so a capture does not feed back into itself.</p>
+        <p>The collector is convenient, but it is also the point where plaintext leaves the host. For a red team, that is a staging and triage decision with its own detection surface. For a blue team, it is the easiest part of the stack to observe from the network and the easiest part for an operator to move.</p>
         <p>The agent uploads finished transactions as JSON. When the queue is busy, it coalesces up to 128 batches or 8 MB into one <code>application/x-ndjson</code> POST. The collector parses each line, inserts the whole set in one SQLite transaction, and trims each affected agent to its newest 20,000 rows. WAL mode and <code>synchronous=NORMAL</code> keep the write path cheap; the database is a capture cache, not a ledger.</p>
         <p>The web UI is deliberately metadata-first. The list query returns only the columns needed for the row: time, method, URL, host, status, process, user, and body lengths. Expanding a row fetches the full headers and bodies on demand. The search box scans the full stored record, including request and response headers and bodies, plus URL, host, method, status, process, and user. Method, status class, and process filters combine with the search, and the same filter clause is used by paging, the live tail, and the statistics endpoint, so the charts and the grid cannot disagree.</p>
         <p>The four pies summarize domain, method, status class, and process. Each pie keeps the top categories and adds a remainder slice, so the percentages add up to the full filtered total. Clicking a slice or a legend entry applies that value as a filter. The delete control removes the agent row and all of its transactions in one transaction, and it requires a session.</p>
         <p>The screenshots below come from an isolated Any.run Windows VM test. The agent ran in that VM and uploaded the captures to the collector. The figures are filtered to public static assets; account and login traffic is not shown.</p>
         <figure class="shot">
           <a href="/assets/collector-overview.png"><img src="/assets/collector-overview.png" alt="NetSnitch collector agent view with four pie charts for domain, method, status class, and process above a paged list of captured HTTPS transactions." width="1440" height="1050" loading="lazy"></a>
-          <figcaption>The collector after an Any.run Windows VM test in an isolated environment. The view is filtered to <code>assets.msn.com</code>; the pies, the match count, and the paged rows all use the same predicate.</figcaption>
+          <figcaption>Figure 9. The collector after an Any.run Windows VM test in an isolated environment. The view is filtered to <code>assets.msn.com</code>; the pies, the match count, and the paged rows all use the same predicate.</figcaption>
         </figure>
         <p>Expanding a row fetches the full record on demand. This is where the storage format becomes visible: the collector keeps the reconstructed request headers, the raw HTTP/2 header block, the response headers, and the response body. The detail below is a static ad-status script from the same test, chosen because it contains no credential material.</p>
         <figure class="shot">
           <a href="/assets/collector-detail.png"><img src="/assets/collector-detail.png" alt="Expanded NetSnitch transaction showing request headers, the raw HTTP/2 header block, response headers, and a one-line JavaScript response body." width="1080" height="1125" loading="lazy"></a>
-          <figcaption>An expanded transaction from the same test. The request headers, the raw HTTP/2 header block, the response headers, and the response body are all preserved. This row is a static ad-status script, so no credential material is displayed.</figcaption>
+          <figcaption>Figure 10. An expanded transaction from the same test. The request headers, the raw HTTP/2 header block, the response headers, and the response body are all preserved. This row is a static ad-status script, so no credential material is displayed.</figcaption>
         </figure>
-        <p>This is a reasonable triage design for a single analyst and a handful of agents. It is not a SIEM. The search is a set of SQL <code>LIKE</code> predicates over the stored text, not a tokenized index; at 20,000 rows per agent it is fine, and at millions it will not be. The collector also has no ingest authentication: the login protects the UI, but <code>/api/ingest</code> is open so agents can post without a password. Put the collector behind a VPN or an authenticating proxy, and treat the database as sensitive material.</p>
-        <p>The agent's uploader has a related weakness: it accepts any TLS certificate for the collector connection, because the capture engine may intercept its own upload. That is a pragmatic lab choice, not a production design. Pin the collector certificate or exempt the collector host from interception if you need the upload channel to be trustworthy.</p>
+        <p>For an operator, this is a reasonable triage design for a single analyst and a handful of agents. It is not a SIEM, and it is not hardened. The search is a set of SQL <code>LIKE</code> predicates over the stored text, not a tokenized index; at 20,000 rows per agent it is fine, and at millions it will not be. The collector also has no ingest authentication: the login protects the UI, but <code>/api/ingest</code> is open so agents can post without a password. Put the collector behind a VPN or an authenticating proxy, and treat the database as sensitive material. A staging point that holds full headers and bodies is a credential store whether or not that was the intent.</p>
+        <p>The agent's uploader has a related weakness: it accepts any TLS certificate for the collector connection, because the capture engine may intercept its own upload. That is a pragmatic lab choice, not a production design. Pin the collector certificate or exempt the collector host from interception if you need the upload channel to be trustworthy. For a red team, that is an operational risk, not a feature.</p>
       </section>
 
       <section id="overlap">
-        <h2>The infostealer overlap</h2>
-        <p>NetSnitch is a diagnostics tool. It is not an infostealer. It captures full transactions for inspection and sends them to a collector; it does not parse browser credential stores, decrypt browser profiles, or prioritize cookies, tokens, and wallets. The distinction matters for intent, scope, and containment.</p>
-        <p>The primitives are still the same ones an infostealer needs. That is the uncomfortable part. A credential stealer can use a signed network filter and a locally trusted CA to read authentication traffic after the client decrypts it. It does not have to touch the browser's cookie database, defeat profile encryption, or inject into the browser. It can sit in the connection path and take the plaintext.</p>
+        <h2>Where the tradecraft overlaps</h2>
+        <p>NetSnitch is a diagnostics tool. It is not an infostealer. It captures full transactions for inspection and sends them to a collector; it does not parse browser credential stores, decrypt browser profiles, or prioritize cookies, tokens, and wallets. The distinction matters for intent, scope, and containment. It does not change the Windows primitives.</p>
+        <p>The primitives are the same ones an intrusion operator can reuse. A credential stealer can use a signed network filter and a locally trusted CA to read authentication traffic after the client decrypts it. It does not have to touch the browser's cookie database, defeat profile encryption, or inject into the browser. It can sit in the connection path and take the plaintext.</p>
         <ul>
           <li>A signed kernel component in the network path.</li>
           <li>A user-mode service that brokers plaintext.</li>
@@ -462,93 +338,142 @@
           <li>A headless control channel that does not need a GUI.</li>
           <li>A collector or staging point that prioritizes the results.</li>
         </ul>
-        <p>For an infostealer, the target set is different: login forms, OAuth tokens, session cookies, API keys, cryptocurrency exchange sessions, and anything else that appears in headers or bodies. The collection layer would parse and rank those fields. The network layer would be the same. This is why "it is only a debugger" is not a sufficient security argument. The capability is dual-use, and the endpoint cannot infer intent from a shared-memory read.</p>
-        <p>The overlap also changes the defensive priority. Browser-specific detections that look for access to the cookie database will miss a network interception path. Disk forensics that recover a browser profile will miss tokens that were captured in transit and never written to disk. The controls that matter are the ones that watch the trust anchor, the driver, the service, and the egress.</p>
+        <p>For a red team, the lesson is that network interception is an alternative to browser credential theft. It has different artifacts and different risk. There is no browser profile access and no cookie database to parse, but there is a durable root CA, a kernel driver, and a plaintext staging point. The choice between those paths is an operational tradeoff, not a capability gap.</p>
+        <p>For an intrusion operator focused on credentials, the target set is different: login forms, OAuth tokens, session cookies, API keys, cryptocurrency exchange sessions, and anything else that appears in headers or bodies. The collection layer would parse and rank those fields. The network layer would be the same. This is why "it is only a debugger" is not a sufficient security argument. The capability is dual-use, and the endpoint cannot infer intent from a shared-memory read.</p>
         <div class="callout">
-          <strong>Do not over-brand it</strong>
-          <p>Calling every use of a signed capture driver a new generation of stealer is inaccurate and unhelpful. The useful claim is narrower: the same Windows primitives support both authorized diagnostics and credential theft, and the defensive artifacts are shared.</p>
+          <strong>The credential and cookie problem</strong>
+          <p>The ring is not just a debugging convenience. It carries <code>Authorization</code> headers, <code>Cookie</code> and <code>Set-Cookie</code> values, form bodies, OAuth tokens, and API keys in plaintext. An intrusion operator who can map the ring can select those fields, stage them, and exfiltrate them over ordinary HTTPS. There is no browser profile to decrypt and no cookie database to parse. The result is session hijacking and account takeover material, which is the main reason this design matters beyond debugging.</p>
         </div>
-      </section>
-
-      <section id="detection">
-        <h2>Detection</h2>
-        <p>The detection order should follow the impact. A new root CA is the highest-signal event because it changes the trust decision for every application that uses the machine store. A new kernel service or driver is next. Named-object handles and process ancestry are supporting evidence. Network egress is the last mile, and it is the easiest for an operator to change.</p>
+        <h3 id="wrong">What HTTP Debugger got wrong</h3>
+        <p>The product is not malware. The problems below are trust-boundary choices that make a dual-use capability easier to abuse. None of them is a memory-safety bug, and several depend on the DACL or directory permissions in a given install; I did not verify those defaults on every supported Windows version.</p>
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Stage</th><th>Artifact</th><th>Detection</th></tr>
+              <tr><th>Design choice</th><th>Why it matters</th><th>Safer boundary</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>The UI is authenticated by a mutex and object access, not caller identity.</td>
+                <td>Any process that can open the mutex and mappings can present the same evidence. The mutex is a liveness flag, not a credential.</td>
+                <td>Bind the channel to an authenticated client identity and verify image, signer, and logon SID.</td>
+              </tr>
+              <tr>
+                <td>The SYSTEM service executes command selectors from any client with a writable mapping.</td>
+                <td>A confused-deputy pattern: the client asks the service to install a CA, program WFP rules, or publish plaintext with the service token. Logging invalid selectors is not authorization.</td>
+                <td>Authorize each command against the caller and require explicit consent for trust-store and driver changes.</td>
+              </tr>
+              <tr>
+                <td>The CA is machine-wide and labeled <code>DEBUG ONLY</code>.</td>
+                <td>The trust change applies to every user and service that uses the Windows store, and it survives uninstall. A debug-only anchor should not be written to <code>LocalMachine\Root</code> in production.</td>
+                <td>Use a per-user store, require consent, and remove the anchor on uninstall.</td>
+              </tr>
+              <tr>
+                <td>The control objects live in <code>Global\</code> and are not bound to a session or desktop.</td>
+                <td>Cross-session access depends entirely on the DACL. If it is broader than the UI's logon, the service becomes a local privilege boundary bypass.</td>
+                <td>Use a per-session namespace and a DACL restricted to the interactive user and the service SID.</td>
+              </tr>
+              <tr>
+                <td>The service loads a WHQL-signed driver from its install directory.</td>
+                <td>A WHQL signature defeats "block unsigned" policy. If the install directory is writable by a lower-privileged user, driver replacement becomes a privilege boundary.</td>
+                <td>Install under a hardened ACL, verify the driver path and signer at load, and run with a restricted token.</td>
+              </tr>
+              <tr>
+                <td>The uninstaller removes the service but leaves the CA.</td>
+                <td>The trust anchor outlives the tool. That is a cleanup defect and a persistence artifact for an intrusion operator.</td>
+                <td>Remove the CA on uninstall and provide a verifiable cleanup report.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Taken together, the design gives a local client a path to a SYSTEM trust change and plaintext egress. That is not a remote vulnerability, and a tight DACL may mitigate the worst of it. But the product does not treat the GUI as a security boundary, and it should. The important question is not whether a user can run a debugger; it is whether any process that can open the objects can make the service act for it.</p>
+        <p>The overlap also changes the defensive priority. Browser-specific detections that look for access to the cookie database will miss a network interception path. Disk forensics that recover a browser profile will miss tokens that were captured in transit and never written to disk. The controls that matter are the ones that watch the trust anchor, the driver, the service, and the egress.</p>
+      </section>
+
+      <section id="detection">
+        <h2>Blue team visibility and operational risk</h2>
+        <p>From an operator's seat, detection is the cost side of the operation. The order below follows impact and durability, not the order of execution. A new root CA is the highest-signal event because it changes the trust decision for every application that uses the machine store. A new kernel service or driver is next. Named-object handles and process ancestry are supporting evidence. Network egress is the last mile, and it is the easiest for an operator to change.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Stage</th><th>Artifact</th><th>Blue team visibility</th><th>Operator risk</th></tr>
             </thead>
             <tbody>
               <tr>
                 <td>Trust anchor</td>
                 <td>CA subject <code>HTTP DEBUGGER CA for DEBUG ONLY</code>; file <code>HTTP DEBUGGER CA for DEBUG ONLY 3.cer</code>; <code>LocalMachine\Root</code></td>
                 <td><code>certutil -store Root</code>; PowerShell <code>Cert:\LocalMachine\Root</code>; Sysmon 13 on <code>HKLM\SOFTWARE\Microsoft\SystemCertificates\Root\Certificates</code>; Security 4657 with SACL. Alert on any new root CA outside a change window.</td>
+                <td>Durable and machine-wide. It survives service removal, so it is the hardest artifact to explain away.</td>
               </tr>
               <tr>
                 <td>Service install</td>
                 <td><code>HTTPDebuggerPro</code>; <code>HTTPDebuggerSvc.exe /install</code>; binary path</td>
                 <td>7045; 4688; Sysmon 1; <code>Get-CimInstance Win32_Service</code>. A signed service running from a user-writable path is a high-signal anomaly.</td>
+                <td>The service name and binary path are easy to change. The install event and the service token are not.</td>
               </tr>
               <tr>
                 <td>Driver</td>
                 <td><code>netfilter2.sys</code> 1.7.2.3; <code>drv2\x64\netfilter2.sys</code>; <code>\\.\CtrlSM</code></td>
                 <td>Sysmon 6; <code>driverquery /v</code>; <code>sc query</code>; registry <code>HKLM\SYSTEM\CurrentControlSet\Services\netfilter2</code>; file path.</td>
+                <td>The WHQL signature defeats unsigned-driver policy. The filename is generic to NetFilter SDK, so the path and service context matter.</td>
               </tr>
               <tr>
                 <td>UI mutex and sections</td>
                 <td><code>Global\HttpDebuggerUiStarted</code>; <code>Global\HttpDebuggerIpc*</code></td>
                 <td><code>WinObj</code>; <code>handle.exe -a</code>; incident-response handle enumeration. Sysmon does not log section objects by default.</td>
+                <td>The names are stable in this build but not a durable signature. The real boundary is the DACL on the objects.</td>
               </tr>
               <tr>
                 <td>Headless client</td>
                 <td>Hidden PowerShell; WMI-spawned child; <code>HttpDebuggerIpc</code> strings</td>
-                <td>4688; Sysmon 1; PowerShell 4104; parent <code>WmiPrvSE.exe</code>; command line <code>-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden</code>.</td>
-              </tr>
-              <tr>
-                <td>Persistence</td>
-                <td>Task <code>NetSnitch</code> or <code>HttpCapture</code>; SYSTEM; AtStartup plus 90 seconds; action PowerShell</td>
-                <td>4698; TaskScheduler 106, 200, 201; <code>Get-ScheduledTask</code>.</td>
+                <td>4688; Sysmon 1; PowerShell 4104; unusual parent process; command-line content.</td>
+                <td>Process ancestry and command lines are easy to vary. Do not overfit to one launcher.</td>
               </tr>
               <tr>
                 <td>Egress</td>
                 <td>POST <code>/api/ingest</code>; <code>application/x-ndjson</code>; <code>X-NetSnitch-Upload: 1</code></td>
                 <td>Proxy or flow logs; Zeek or Suricata; DNS to tunnel domains. The header is easy to change, so use it as a triage signal, not a blocklist.</td>
+                <td>The collector is the noisiest and most data-rich part of the stack. It should be behind a VPN or authenticating proxy, and the database should be treated as a credential store.</td>
               </tr>
               <tr>
                 <td>Data</td>
                 <td>Full headers and bodies; authorization headers; cookies</td>
-                <td>DLP; collector database encryption; retention controls. Treat the collector as a credential store.</td>
+                <td>DLP; collector database encryption; retention controls.</td>
+                <td>Full plaintext is the objective and the liability. A staging point that is not encrypted or scoped is a worse risk than the capture itself.</td>
               </tr>
             </tbody>
           </table>
         </div>
-        <p>Two queries are worth keeping close. The first checks the root store for the CA by subject. The second checks the service and driver paths. Both are cheap and both run without a vendor agent.</p>
+        <p>Two checks are worth keeping close. The first checks the root store for the CA by subject. The second checks the service and driver paths. Both are cheap and both run without a vendor agent. From an operator's seat, these are the checks to assume will run.</p>
         <figure class="code">
           <figcaption>Cheap checks for the trust anchor and the service path</figcaption>
-          <pre><code>Get-ChildItem Cert:\LocalMachine\Root |
+          <pre><code># Machine root store, filtered to the CA subject.
+Get-ChildItem Cert:\LocalMachine\Root |
   Where-Object { $_.Subject -match 'HTTP DEBUGGER' } |
   Select-Object Subject, Thumbprint, NotBefore, NotAfter
 
+# Installed services, filtered to the HTTP Debugger and NetFilter paths.
 Get-CimInstance Win32_Service |
   Where-Object { $_.PathName -match 'HTTPDebuggerSvc|netfilter2' } |
   Select-Object Name, DisplayName, State, StartMode, PathName</code></pre>
         </figure>
-        <p>For Sysmon, the high-value events are 6 (driver loaded), 13 (registry value set), and 1 (process creation). The registry path for a machine root certificate is under <code>HKLM\SOFTWARE\Microsoft\SystemCertificates\Root\Certificates</code>. A Sysmon 13 rule on that path will catch the trust change even if the service binary is renamed. Event 6 with <code>ImageLoaded</code> ending in <code>netfilter2.sys</code> catches the driver load; pair it with the file path, because the filename is generic to NetFilter SDK.</p>
-        <p>Do not rely on the service name alone. It is a string in the binary and in the installer, and an operator can choose a different name. The root-store write and the driver load are harder to rename. The same applies to the named objects: the names are stable in this build, but a different build or a wrapper could change them. The behavior, a process holding a writable section and a UI mutex while a signed service publishes plaintext, is the durable signal.</p>
+        <p>For blue team visibility, the high-value Sysmon events are 6 (driver loaded), 13 (registry value set), and 1 (process creation). The registry path for a machine root certificate is under <code>HKLM\SOFTWARE\Microsoft\SystemCertificates\Root\Certificates</code>. A Sysmon 13 rule on that path will catch the trust change even if the service binary is renamed. Event 6 with <code>ImageLoaded</code> ending in <code>netfilter2.sys</code> catches the driver load; pair it with the file path, because the filename is generic to NetFilter SDK.</p>
+        <p>Do not rely on the service name alone. It is a string in the binary and in the installer, and an operator can choose a different name. The root-store write and the driver load are harder to rename. The same applies to the named objects: the names are stable in this build, but a different build or a wrapper could change them. The durable signal is the behavior: a process holding a writable section and a UI mutex while a signed service publishes plaintext.</p>
         <p>For prevention, WDAC is a better fit than a hash blocklist, but it has to be an allowlist. The driver is WHQL-signed and the service is signed by a commercial CA, so "block unsigned" does nothing. If the product is not approved in your environment, block the specific service binary and the specific driver by hash or file path, and alert on the root CA. If NetFilter SDK is already approved for a VPN or security product, the driver filename alone will produce false positives; use the service path and the CA subject to disambiguate.</p>
-        <p>The uninstall gap is worth a separate alert. The project stops and deletes the service but leaves the CA. If the CA appears without the service, or survives a service removal, treat it as a persistence artifact and remove it deliberately. The CA is a machine-wide trust decision; it should not be left behind by a tool cleanup.</p>
+        <p>The uninstall gap is worth a separate alert. The project stops and deletes the service but leaves the CA. From an operator's seat, that is a cleanup obligation and a reason to plan host cleanup before execution. From a blue team's seat, a CA that appears without the service, or survives a service removal, is a trust-store change that outlived its installer. Treat it deliberately.</p>
       </section>
 
       <section id="limitations">
         <h2>Limitations</h2>
-        <p>This is a static analysis of one build, with dynamic testing on Windows 10 and 11 x64. The offsets, selector values, and channel set are build-specific. I did not verify the DACL on every OS version or in every install mode, and I did not establish that a standard user can open the mappings. I did not analyze the CA private-key storage, the driver's WFP callouts, or the service's settings parser in depth. The collector is a lab tool, not a hardened multi-tenant service. No memory-safety vulnerability is claimed here; the finding is architectural.</p>
-        <p>The binaries are third-party components of HTTP Debugger Pro. Use a licensed copy, and do not redistribute them outside the terms of the vendor's license. The NetSnitch repository is the reference implementation for the client side; this post is the analysis of why it works and what it leaves behind.</p>
+        <p>This is a static analysis of one build, with dynamic testing on Windows 10 and 11 x64 and a collector test in an Any.run Windows VM. The offsets, command ordinals, and channel set are build-specific. I did not verify the DACL on every OS version or in every install mode, and I did not establish that a standard user can open the mappings. I did not analyze the CA private-key storage, the driver's WFP callouts, or the service's settings parser in depth. The collector is a lab tool, not a hardened multi-tenant service. No memory-safety vulnerability is claimed here; the finding is architectural.</p>
+        <p>The binaries are third-party components of HTTP Debugger Pro. Use a licensed copy, and do not redistribute them outside the terms of the vendor's license. The NetSnitch repository is the reference implementation for the client side. This post is the analysis of how the control plane works, what an operator can reuse, and what the design leaves behind.</p>
       </section>
 
       <section id="conclusion">
         <h2>What to take away</h2>
-        <p>The interesting part of this stack is not that a debugger can run without its GUI. It is that a signed network service exposes plaintext through a general-purpose IPC surface whose only caller check is object access and a named mutex. That pattern is common in Windows software, and it is exactly the pattern an infostealer can reuse.</p>
-        <p>The defensive priorities are clear. Watch the root store. Watch kernel service and driver installs, especially from user-writable paths. Watch for processes holding the debugger's named sections without the UI. Watch the egress, but do not make it the first line. Hashes and service names are useful for triage; they are not the control.</p>
+        <p>The interesting part of this stack is not that a debugger can run without its GUI. It is that a signed network service exposes plaintext through a general-purpose IPC surface whose only caller check is object access and a named mutex. For an operator, that is a useful capability: the GUI becomes optional, and the service's token does the privileged work. For a blue team, it is a hard attribution problem because the control path is local object access, not a network protocol.</p>
+        <p>The exfiltration risk is concrete. The ring already contains authorization headers, cookies, form bodies, and API tokens in plaintext. An intrusion operator does not need browser storage or a cookie database; a selected slice of the ring is enough to hijack sessions and replay API calls. HTTP Debugger's mistake is not that it can capture HTTPS. It is that the privileged service treats object access as authorization, installs a machine-wide CA labeled debug-only, and leaves the anchor behind after uninstall.</p>
+        <p>The red team lesson is that this is not an exploit chain. It is a control-plane reimplementation. The client is the easy part; the trust anchor and the driver are the expensive parts. The read path is quieter but still puts a consumer in the data path. The command path is more capable but leaves durable artifacts. The objective should decide which one is in scope.</p>
+        <p>The blue team lesson is to watch the durable changes. Watch the root store. Watch kernel service and driver installs, especially from user-writable paths. Watch for processes holding the debugger's named sections without the UI. Watch the egress, but do not make it the first line. Hashes and service names are useful for triage; they are not the control.</p>
         <p>NetSnitch is a research tool, not a stealer. The distinction is real, and it should be stated. The detection problem does not depend on the distinction. The primitives are the same, and the endpoint has to notice them.</p>
         <div class="post-footer">
           <p>Corrections, detection rules, or a different build? Open an issue on <a href="https://github.com/portbuster1337/NetSnitch">GitHub</a>.</p>

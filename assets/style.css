@@ -568,6 +568,40 @@ main {
   height: auto;
 }
 
+.article figure.diagram {
+  width: max-content;
+  max-width: min(calc(100vw - 2.5rem), 60rem);
+  margin: 2.4rem 0 2.6rem 50%;
+  padding: 0.8rem;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  transform: translateX(-50%);
+}
+
+.article figure.diagram-wide {
+  max-width: min(calc(100vw - 2.5rem), 68rem);
+}
+
+.article figure.diagram a {
+  display: block;
+  text-decoration: none;
+  cursor: zoom-in;
+}
+
+.article figure.diagram img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+  background: #ffffff;
+}
+
+.article figure.diagram figcaption {
+  max-width: 46rem;
+  margin: 0.7rem auto 0;
+}
+
 .table-wrap {
   margin: 1.6rem 0 2.2rem;
   overflow-x: auto;
@@ -843,6 +877,29 @@ main {
     transform: none;
   }
 
+  .article figure.diagram {
+    padding: 0.4rem;
+  }
+
+  .article figure.diagram a {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 0.3rem;
+  }
+
+  .article figure.diagram img {
+    min-width: 680px;
+    max-width: none;
+  }
+
+  .article figure.diagram.diagram-wide img {
+    min-width: 900px;
+  }
+
+  .table-wrap table {
+    min-width: 40rem;
+  }
+
   .article table {
     font-size: 0.78rem;
   }
@@ -891,6 +948,20 @@ main {
   }
 
   .article figure.shot a {
+    display: block;
+  }
+
+  .article figure.diagram {
+    width: 100%;
+    max-width: 100%;
+    margin: 1.5rem 0;
+    padding: 0;
+    border: 0;
+    transform: none;
+    break-inside: avoid;
+  }
+
+  .article figure.diagram a {
     display: block;
   }
 }

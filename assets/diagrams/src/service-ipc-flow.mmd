@@ -1,0 +1,22 @@
+flowchart TB
+  A["<b>Create the UI mutex</b><br/><code>004524D2  push 0x829270</code><br/>// Pushes the Global\HttpDebuggerUiStarted name.<br/><code>004524D7  push 0</code><br/>// Sets the initial owner to false.<br/><code>004524D9  push [ebp-0xAC]</code><br/>// Pushes the security attributes pointer.<br/><code>004524E2  call dword ptr [0x74F1D8]</code><br/>// Calls CreateMutexA to create the UI-present mutex.<br/><code>004524E8  mov [esi+0x0C], eax</code><br/>// Stores the mutex handle in the service object.<br/><code>004524EB  test eax, eax</code><br/>// Checks whether creation succeeded.<br/><code>004524ED  je loc_45295B</code><br/>// Branches to the failure path on a null handle."]
+  B["<b>Create the Settings channel</b><br/><code>004524F3  push 0x1E</code><br/>// Pushes the maximum name length.<br/><code>004524F5  push 0x829290</code><br/>// Pushes the Global\HttpDebuggerIpcSettings name.<br/>// Intermediate argument setup omitted from this excerpt.<br/><code>00452538  push ebx</code><br/>// Pushes the channel flags.<br/><code>00452539  push ecx</code><br/>// Pushes the security attributes.<br/><code>0045253A  push eax</code><br/>// Pushes the object name.<br/><code>0045253B  lea ecx, [esi+0x20]</code><br/>// Points ECX at the Settings channel object.<br/><code>0045253E  call sub_453B90</code><br/>// Creates the Settings section channel."]
+  C["<b>Create the command and transaction channels</b><br/><code>004525A6  push 0x8292D8</code><br/>// Pushes the Global\HttpDebuggerIpcEngineCommand name.<br/>// Command channel setup omitted from this excerpt.<br/><code>0045268A  push 0x82934C</code><br/>// Pushes the Global\HttpDebuggerIpcHttpTransaction name.<br/><code>004526C1  push 0x80</code><br/>// Sets the transaction ring capacity to 128 slots.<br/><code>004526C8  lea ecx, [esi+0x480]</code><br/>// Points ECX at the transaction channel object.<br/><code>004526CE  call sub_453B90</code><br/>// Creates the transaction channel."]
+  FAIL["<b>loc_45295B</b><br/>// Failure path outside this excerpt."]
+  READY["<b>IPC surface ready</b><br/>// Six named channels plus the UI mutex."]
+
+  A -->|success| B
+  A -->|failure| FAIL
+  B --> C
+  C --> READY
+
+  classDef block fill:#ffffff,stroke:#111111,color:#111111,stroke-width:1.5px;
+  classDef helper fill:#f4f4f4,stroke:#111111,color:#111111,stroke-width:1.5px,stroke-dasharray:4 2;
+  classDef fail fill:#ffffff,stroke:#111111,color:#111111,stroke-width:1.5px,stroke-dasharray:2 2;
+  classDef endnode fill:#111111,stroke:#111111,color:#ffffff,stroke-width:1.5px;
+  class A block;
+  class B block;
+  class C block;
+  class FAIL fail;
+  class READY endnode;
+  linkStyle default stroke:#111111,stroke-width:1.5px;

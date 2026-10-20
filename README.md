@@ -6,10 +6,11 @@ Static source for [portbuster1337.github.io](https://portbuster1337.github.io).
 
 - `index.html`: writing index
 - `about.html`: scope, disclosure, contact
-- `posts/headless-https-capture.html`: NetSnitch and HTTP Debugger IPC analysis
+- `posts/headless-https-capture.html`: red team analysis of the NetSnitch and HTTP Debugger IPC stack
 - `assets/style.css`: black-and-white system-font stylesheet
 - `assets/favicon.svg`: local monochrome icon
 - `assets/collector-overview.png`, `assets/collector-detail.png`: grayscale collector screenshots from the isolated Any.run test
+- `assets/diagrams/`: static Mermaid SVGs, with `.mmd` sources and the generator under `assets/diagrams/src/`
 - `404.html`: GitHub Pages not-found page
 - `sitemap.xml`, `robots.txt`: crawler metadata
 - `.nojekyll`: serve files without Jekyll processing
@@ -18,8 +19,10 @@ Static source for [portbuster1337.github.io](https://portbuster1337.github.io).
 
 - Black and white only. No external fonts, analytics, trackers, or third-party assets.
 - ASCII only. No em dashes, curly quotes, arrows, or other non-ASCII punctuation in page content.
-- Security writing is defensive and authorized-use scoped. No arming sequences, persistence recipes, credential theft code, or turnkey intrusion tooling.
-- When discussing dual-use techniques, describe the mechanism and the detection signal, not the operational sequence.
+- Security writing is red team oriented, authorized-use scoped, and written from an operator's perspective. It covers architecture, reverse engineering, operational tradeoffs, and blue team visibility.
+- No arming sequences, selector values, persistence recipes, credential theft code, or turnkey intrusion tooling.
+- When discussing dual-use techniques, describe the mechanism, the tradeoffs, and the detection signal, not the operational sequence.
+- Disassembly is shown as static Mermaid SVGs. Every instruction line has a comment; control flow and calls are linked in the graph. No client-side JavaScript is used to render it.
 - Screenshots are grayscale and limited to non-sensitive traffic from an isolated test VM.
 
 ## Local preview

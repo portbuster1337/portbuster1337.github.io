@@ -1,0 +1,16 @@
+flowchart TB
+  A["<b>Create the named section</b><br/><code>00417E77  push 0</code><br/>// Sets the high-order size to zero.<br/><code>00417E79  push 4</code><br/>// Requests PAGE_READWRITE protection.<br/><code>00417E7B  push [ebp-0x54]</code><br/>// Pushes the channel security attributes.<br/><code>00417E82  push -1</code><br/>// Uses INVALID_HANDLE_VALUE for a paging-file-backed section.<br/><code>00417E84  call CreateFileMappingA</code><br/>// Creates the named section."]
+  B["<b>Map the section read/write</b><br/>// Handle validation and name setup omitted from this excerpt.<br/><code>00417EA7  push 0xF001F</code><br/>// Requests FILE_MAP_ALL_ACCESS.<br/><code>00417EAD  call MapViewOfFile</code><br/>// Maps the section into the UI process."]
+  READY["<b>Shared section</b><br/>// The service opens and maps the same name."]
+
+  A --> B
+  B --> READY
+
+  classDef block fill:#ffffff,stroke:#111111,color:#111111,stroke-width:1.5px;
+  classDef helper fill:#f4f4f4,stroke:#111111,color:#111111,stroke-width:1.5px,stroke-dasharray:4 2;
+  classDef fail fill:#ffffff,stroke:#111111,color:#111111,stroke-width:1.5px,stroke-dasharray:2 2;
+  classDef endnode fill:#111111,stroke:#111111,color:#ffffff,stroke-width:1.5px;
+  class A block;
+  class B block;
+  class READY endnode;
+  linkStyle default stroke:#111111,stroke-width:1.5px;

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>About | Portbuster Security Research</title>
-  <meta name="description" content="About Portbuster, an independent security researcher working on Windows internals, reverse engineering, network telemetry, and detection engineering.">
+  <meta name="description" content="About Portbuster, an independent security researcher and tool developer working on offensive tooling, C2, privilege escalation, network execution, vulnerability research, and low-level Windows and Linux internals.">
   <link rel="canonical" href="https://portbuster1337.github.io/about.html">
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/style.css">
@@ -28,20 +28,20 @@
   <main id="main">
     <article class="wrap simple-page">
       <p class="kicker">About</p>
-      <h1>Security research with the mechanism left in.</h1>
-      <p class="lead">I am an independent security researcher. This site is my research log: Windows internals, reverse engineering, network telemetry, and detection engineering.</p>
+      <h1>Security research from the operator's seat.</h1>
+      <p class="lead">I am an independent security researcher and tool developer. This site is my research log: offensive tooling, C2, privilege escalation, network execution, vulnerability research, and the low-level Windows and Linux internals underneath.</p>
 
-      <p>I reverse engineer how software moves data across trust boundaries, then write down the parts that help defenders: object layouts, protocol state machines, trust-store changes, and the artifacts that survive cleanup. The work ranges from service and kernel interfaces to browser and network protocols, malware tradecraft, and endpoint telemetry. The goal is to make a system legible, not to turn it into a turnkey intrusion tool.</p>
+      <p>I build tools and then take them apart. My work usually starts with a primitive: a protocol, a kernel interface, a trust boundary, or an execution path. I care about how a tool behaves under load, what it leaves on disk and in memory, and how an operator or defender can tell it apart from normal system activity. The public repositories include <a href="https://github.com/portbuster1337/ArachneC2">ArachneC2</a> (decentralized C2 on libp2p), <a href="https://github.com/portbuster1337/lpe-toolkit">lpe-toolkit</a> (multi-architecture Linux privilege escalation), <a href="https://github.com/portbuster1337/Atlas">Atlas</a> (network execution across SMB, Kerberos, WMI, LDAP, and DCSync), and a series of CVE proof-of-concept tools. The common thread is control over a primitive and a clear view of the side effects.</p>
 
       <h2>Scope and disclosure</h2>
-      <p>Research is tested on systems I own or have written permission to use. Vulnerabilities are reported privately before publication. I do not publish credential theft code, exploit chains, persistence recipes, or ready-to-run intrusion tooling.</p>
-      <p>Some posts discuss dual-use Windows primitives. When a technique could be reused by an infostealer or another intruder, the post focuses on the mechanism and the defensive signal, and deliberately omits the operational sequence that would make it a recipe.</p>
+      <p>Research is tested on systems I own or have written permission to use. Vulnerabilities are reported privately before publication where a vendor channel exists. My public repositories are offensive tools and proof-of-concept code; they are intended for authorized assessments, labs, and research. Using them against systems you do not own or have permission to test is not authorized use.</p>
+      <p>Some posts discuss dual-use primitives. When a technique could be reused by an infostealer or another intruder, including for credential and session-cookie harvesting, the post focuses on the mechanism, the operational tradeoffs, and the defensive signal, and deliberately omits the operational sequence that would make it a recipe.</p>
 
       <h2>This site</h2>
-      <p>I publish under the handle Portbuster. The site is static HTML and CSS. It uses system fonts only, has no analytics or trackers, and loads no third-party assets. The source is published at <a href="https://github.com/portbuster1337/portbuster1337.github.io">github.com/portbuster1337/portbuster1337.github.io</a>.</p>
+      <p>I publish under the handle Portbuster. The site is static HTML and CSS. It uses system fonts only, has no analytics or trackers, and loads no third-party assets. The source is published in the <a href="https://github.com/portbuster1337/portbuster1337.github.io">site repository on GitHub</a>.</p>
 
       <h2>Contact</h2>
-      <p>Corrections, detection improvements, and build reports are welcome through <a href="https://github.com/portbuster1337">GitHub</a>. If you are reporting a vulnerability in a third-party product, contact the vendor first.</p>
+      <p>Corrections, detection improvements, and build reports are welcome through <a href="https://github.com/portbuster1337">GitHub</a>. For tool issues, open an issue in the relevant repository. If you are reporting a vulnerability in a third-party product, contact the vendor first.</p>
 
       <p><a href="/">Back to writing</a></p>
     </article>

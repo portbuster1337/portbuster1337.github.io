@@ -1,0 +1,22 @@
+flowchart TB
+  A["<b>Select the store scope</b><br/><code>004DA9AD  cmp [ebp+0x14], 0</code><br/>// Compares the caller's scope argument with zero.<br/><code>004DA9B1  jne 0x4DA9C1</code><br/>// Branches to the other scope path when it is nonzero.<br/><code>004DA9B3  mov [ebp-0x58], 0x20</code><br/>// Sets the provider flags to 0x20.<br/><code>004DA9BA  mov [ebp-0x50], 0x20000</code><br/>// Selects CERT_SYSTEM_STORE_LOCAL_MACHINE."]
+  B["<b>Open LocalMachine Root</b><br/><code>004DA9E8  lea eax, [ebp-0x44]</code><br/>// Loads the address of the converted Root store name.<br/><code>004DA9EB  push eax</code><br/>// Pushes the store name.<br/><code>004DA9EC  mov ecx, [ebp-0x50]</code><br/>// Reloads the LocalMachine scope flags.<br/><code>004DA9EF  push ecx</code><br/>// Pushes the scope flags.<br/><code>004DA9F0  push 0</code><br/>// Passes a null provider parameter.<br/><code>004DA9F2  push 0x10001</code><br/>// Selects X509 and PKCS_7 ASN encodings.<br/><code>004DA9F7  push 0xA</code><br/>// Selects CERT_STORE_PROV_SYSTEM_W.<br/><code>004DA9F9  call CertOpenStore</code><br/>// Opens the LocalMachine Root store."]
+  C["<b>Add the encoded certificate</b><br/><code>004DAA0A  lea edx, [ebp-0x4C]</code><br/>// Computes the output cert-context slot.<br/><code>004DAA0D  push edx</code><br/>// Pushes the cert-context output pointer.<br/><code>004DAA0E  push 2</code><br/>// Uses CERT_STORE_ADD_USE_EXISTING.<br/><code>004DAA10  mov eax, [ebp+0xC]</code><br/>// Loads the certificate length.<br/><code>004DAA13  push eax</code><br/>// Pushes the certificate length.<br/><code>004DAA14  mov ecx, [ebp+8]</code><br/>// Loads the certificate byte pointer.<br/><code>004DAA17  push ecx</code><br/>// Pushes the certificate bytes.<br/><code>004DAA18  push 1</code><br/>// Selects X509_ASN_ENCODING.<br/><code>004DAA1A  mov edx, [ebp-0x48]</code><br/>// Loads the open store handle.<br/><code>004DAA1D  push edx</code><br/>// Pushes the store handle.<br/><code>004DAA1E  call CertAddEncodedCertificateToStore</code><br/>// Adds the CA to the machine Root store."]
+  OTHER["<b>Other store scope</b><br/>// Outside this excerpt."]
+  TRUST["<b>Machine trust anchor</b><br/>// Persists after service removal."]
+
+  A -->|zero| B
+  A -->|nonzero| OTHER
+  B --> C
+  C --> TRUST
+
+  classDef block fill:#ffffff,stroke:#111111,color:#111111,stroke-width:1.5px;
+  classDef helper fill:#f4f4f4,stroke:#111111,color:#111111,stroke-width:1.5px,stroke-dasharray:4 2;
+  classDef fail fill:#ffffff,stroke:#111111,color:#111111,stroke-width:1.5px,stroke-dasharray:2 2;
+  classDef endnode fill:#111111,stroke:#111111,color:#ffffff,stroke-width:1.5px;
+  class A block;
+  class B block;
+  class C block;
+  class OTHER fail;
+  class TRUST endnode;
+  linkStyle default stroke:#111111,stroke-width:1.5px;

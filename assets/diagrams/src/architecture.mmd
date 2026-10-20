@@ -1,0 +1,37 @@
+flowchart TB
+  subgraph client["Authorized red team client"]
+    C1["UI mutex<br/>Global\HttpDebuggerUiStarted<br/>// liveness gate, not authentication"]
+    C2["Named section mappings<br/>settings, command, notifications,<br/>connection info, transactions<br/>// object access is the credential"]
+    C3["Client consumes records<br/>and uploads plaintext<br/>// egress and staging"]
+  end
+
+  subgraph service["HTTPDebuggerSvc.exe (SYSTEM)"]
+    S1["Command dispatch<br/>// selector check, no caller attestation"]
+    S2["CA import<br/>LocalMachine\Root<br/>// machine-wide trust change"]
+    S3["WFP rule programming<br/>// redirect matching TCP flows"]
+    S4["Transaction ring<br/>128 slots x 0x6000<br/>// decrypted request and response"]
+  end
+
+  D["netfilter2.sys<br/>WHQL-signed WFP driver<br/>// sits in the TCP path"]
+  T["Target TLS flows<br/>// browser, updater, service traffic"]
+  K["Collector<br/>SQLite and web UI<br/>// staging and triage"]
+
+  C1 --> C2
+  C2 -->|command ring| S1
+  S1 -->|install trust| S2
+  S1 -->|program rules| S3
+  S3 --> D
+  D -->|intercept 80 and 443| T
+  S1 -->|publish records| S4
+  S4 -->|plaintext records| C3
+  C3 -->|HTTPS upload| K
+
+  classDef client fill:#ffffff,stroke:#111111,color:#111111,stroke-width:1.5px;
+  classDef svc fill:#f4f4f4,stroke:#111111,color:#111111,stroke-width:1.5px;
+  classDef ext fill:#ffffff,stroke:#111111,color:#111111,stroke-width:1.5px,stroke-dasharray:4 2;
+  classDef sink fill:#111111,stroke:#111111,color:#ffffff,stroke-width:1.5px;
+  class C1,C2,C3 client;
+  class S1,S2,S3,S4 svc;
+  class D,T ext;
+  class K sink;
+  linkStyle default stroke:#111111,stroke-width:1.5px;

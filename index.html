@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Portbuster Security Research</title>
-  <meta name="description" content="Independent security research on Windows internals, reverse engineering, network telemetry, malware tradecraft, and detection engineering.">
+  <meta name="description" content="Independent offensive security research and tooling: C2, privilege escalation, network execution, vulnerability research, and low-level Windows and Linux internals.">
   <link rel="canonical" href="https://portbuster1337.github.io/">
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/style.css">
@@ -27,9 +27,9 @@
 
   <main id="main">
     <section class="wrap home-intro">
-      <p class="kicker">Independent security research</p>
-      <h1>Notes on Windows internals, reverse engineering, and detection.</h1>
-      <p class="lede">I am an independent security researcher. I reverse engineer how software moves data across trust boundaries, from Windows services and kernel interfaces to network protocols and malware tradecraft, then write down the parts that help defenders.</p>
+      <p class="kicker">Independent offensive security research</p>
+      <h1>Notes on offensive tooling, low-level systems, and the traces they leave.</h1>
+      <p class="lede">I am an independent security researcher and tool developer. I build and reverse engineer offensive security tooling: C2 frameworks, privilege escalation, network execution, vulnerability research, and the low-level Windows and Linux primitives underneath. I write down the engineering tradeoffs and what defenders can see.</p>
     </section>
 
     <section class="wrap" aria-labelledby="writing">
@@ -41,21 +41,17 @@
         <article class="post-item">
           <div class="post-date">
             <time datetime="2026-10-20">20 Oct 2026</time>
+            <span class="tag">Red team</span>
             <span class="tag">Windows</span>
             <span class="tag">Network</span>
           </div>
           <div>
-            <h2><a href="/posts/headless-https-capture.html">Headless HTTPS capture on Windows: inside HTTP Debugger's IPC</a></h2>
-            <p>A signed capture service, a 128-slot shared-memory ring, and a machine-wide root CA. How the service exposes plaintext without its GUI, where the trust boundary actually sits, and how defenders can detect the same pattern.</p>
-            <p class="read">26 min read</p>
+            <h2><a href="/posts/headless-https-capture.html">Headless HTTPS capture on Windows: a red team view of HTTP Debugger's IPC</a></h2>
+            <p>A red team reverse engineering note on HTTP Debugger's headless capture stack: named-section IPC, a 128-slot plaintext ring, a machine-wide root CA, and the credential and cookie exposure that follows.</p>
+            <p class="read">31 min read</p>
           </div>
         </article>
       </div>
-    </section>
-
-    <section class="wrap tooling" aria-labelledby="tooling">
-      <h2 id="tooling">Tooling</h2>
-      <p><a href="https://github.com/portbuster1337/NetSnitch">NetSnitch</a> is a headless HTTP and HTTPS capture tool for Windows, with a Python collector and a paged web interface. The repository contains the implementation, the collector, and the build notes. It is intended for authorized diagnostics and research on systems you control.</p>
     </section>
   </main>
 

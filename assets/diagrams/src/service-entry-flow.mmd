@@ -1,0 +1,23 @@
+flowchart TB
+  A["<b>First setup and IPC creation</b><br/><code>004845DD  call sub_4511E0</code><br/>// Calls the first setup helper; EAX receives its status.<br/><code>004845E2  mov ecx, eax</code><br/>// Moves the status into ECX as the this pointer for the next call.<br/><code>004845E4  call sub_452470</code><br/>// Creates the named mutex and IPC sections before SCM registration.<br/><code>004845E9  test eax, eax</code><br/>// Tests the setup result for zero.<br/><code>004845EB  je loc_48498D</code><br/>// Jumps to the failure path when setup returns zero."]
+  B["<b>Second setup path</b><br/><code>004845F1  call sub_451240</code><br/>// Calls the second initialization helper.<br/><code>004845F6  mov ecx, eax</code><br/>// Passes its result to the next setup call in ECX.<br/><code>004845F8  call sub_452B20</code><br/>// Runs the second setup path and creates more engine state.<br/><code>004845FD  test eax, eax</code><br/>// Checks the second setup result for zero.<br/><code>004845FF  je loc_48498D</code><br/>// Jumps to the same failure path on zero."]
+  C["<b>SCM dispatch table</b><br/><code>00484605  lea eax, [esp+0x20]</code><br/>// Computes the address of the SCM service table on the stack.<br/><code>00484609  mov dword ptr [esp+0x20], 0x82B3C4</code><br/>// Stores the HTTPDebuggerPro service name pointer.<br/><code>00484611  push eax</code><br/>// Pushes the service table pointer for the SCM call.<br/><code>00484612  mov dword ptr [esp+0x28], 0x484440</code><br/>// Stores the ServiceMain pointer at 0x484440.<br/><code>0048462A  call dword ptr [0x74F074]</code><br/>// Calls StartServiceCtrlDispatcherA to hand control to the SCM."]
+  FAIL["<b>loc_48498D</b><br/>// Failure or cleanup path outside this excerpt."]
+  SCM["<b>SCM dispatch</b><br/>// Calls ServiceMain at 0x484440."]
+
+  A -->|nonzero| B
+  A -->|zero| FAIL
+  B -->|nonzero| C
+  B -->|zero| FAIL
+  C --> SCM
+
+  classDef block fill:#ffffff,stroke:#111111,color:#111111,stroke-width:1.5px;
+  classDef helper fill:#f4f4f4,stroke:#111111,color:#111111,stroke-width:1.5px,stroke-dasharray:4 2;
+  classDef fail fill:#ffffff,stroke:#111111,color:#111111,stroke-width:1.5px,stroke-dasharray:2 2;
+  classDef endnode fill:#111111,stroke:#111111,color:#ffffff,stroke-width:1.5px;
+  class A block;
+  class B block;
+  class C block;
+  class FAIL fail;
+  class SCM endnode;
+  linkStyle default stroke:#111111,stroke-width:1.5px;
